@@ -1,0 +1,21 @@
+{
+  "name": "camelot-inventory-management",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
+    "@vitejs/plugin-react": "latest",
+    "jspdf": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "recharts": "latest",
+    "vite": "latest",
+    "xlsx": "latest"
+  }
+}
