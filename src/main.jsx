@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BarChart3, Boxes, Building2, ClipboardList, Download, FileSpreadsheet, LayoutDashboard, LogOut, PackagePlus, PackageMinus, Repeat2, Search, Settings, ShieldCheck, Truck, Users, Warehouse } from 'lucide-react';
+import { BarChart3, Boxes, Building2, ClipboardList, Download, FileSpreadsheet, LayoutDashboard, LogOut, PackageMinus, PackagePlus, Printer, Repeat2, Search, Settings, ShieldCheck, Truck, Users, Warehouse } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
@@ -13,6 +13,7 @@ const menu = [
   ['Inventory', Warehouse],
   ['Stock In', PackagePlus],
   ['Stock Out', PackageMinus],
+  ['Daily Use', ClipboardList],
   ['Transfers', Repeat2],
   ['Reports', ClipboardList],
   ['Suppliers', Truck],
@@ -21,24 +22,35 @@ const menu = [
   ['Settings', Settings]
 ];
 
-function money(n) {
-  return Number(n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-}
-
 function App() {
   const [active, setActive] = useState('Dashboard');
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
   const [query, setQuery] = useState('');
-  const [form, setForm] = useState({ productId: '', qty: 1, warehouse: 'Warehouse 1', destination: '', notes: '' });
+  const [form, setForm] = useState({
+    productId: '',
+    qty: 1,
+    warehouse: 'Warehouse 1',
+    destination: '',
+    notes: ''
+  });
 
-  useEffect(() => { loadProducts(); }, []);
+  useEffect(() => {
+    loadProducts();
+  }, []);
 
   async function loadProducts() {
-    const { data, error } = await supabase.from('products').select('*').order('id', { ascending: true });
-    if (error) return alert(error.message);
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('id', { ascending: true });
 
-    const formatted = (data || []).map(p => ({
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    const formatted = (data || []).map((p) => ({
       id: p.id,
       code: p.code,
       name: p.name,
@@ -46,13 +58,16 @@ function App() {
       unit: p.unit || 'units',
       min: Number(p.min_stock || 0),
       w1: Number(p.w1 || 0),
-      w2: Number(p.w2 || 0),
-      cost: Number(p.cost || 0)
+      w2: Number(p.w2 || 0)
     }));
 
     setProducts(formatted);
+
     if (formatted.length > 0) {
-      setForm(prev => ({ ...prev, productId: prev.productId || formatted[0].id }));
+      setForm((prev) => ({
+        ...prev,
+        productId: prev.productId || formatted[0].id
+      }));
     }
   }
 
@@ -68,7 +83,6 @@ function App() {
     const minStock = prompt('Minimum Stock', '0') || '0';
     const w1 = prompt('Warehouse 1 Stock', '0') || '0';
     const w2 = prompt('Warehouse 2 Stock', '0') || '0';
-    const cost = prompt('Cost', '0') || '0';
 
     const { error } = await supabase.from('products').insert({
       code,
@@ -77,8 +91,7 @@ function App() {
       unit,
       min_stock: Number(minStock),
       w1: Number(w1),
-      w2: Number(w2),
-      cost: Number(cost)
+      w2: Number(w2)
     });
 
     if (error) return alert(error.message);
@@ -97,7 +110,6 @@ function App() {
     const minStock = prompt('Minimum Stock', product.min) || '0';
     const w1 = prompt('Warehouse 1 Stock', product.w1) || '0';
     const w2 = prompt('Warehouse 2 Stock', product.w2) || '0';
-    const cost = prompt('Cost', product.cost) || '0';
 
     const { error } = await supabase
       .from('products')
@@ -108,8 +120,7 @@ function App() {
         unit,
         min_stock: Number(minStock),
         w1: Number(w1),
-        w2: Number(w2),
-        cost: Number(cost)
+        w2: Number(w2)
       })
       .eq('id', product.id);
 
@@ -120,28 +131,31 @@ function App() {
   async function deleteProduct(id) {
     if (!confirm('Delete this product?')) return;
 
-    const { error } = await supabase.from('products').delete().eq('id', id);
-    if (error) return alert(error.message);
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id);
 
+    if (error) return alert(error.message);
     await loadProducts();
   }
 
   const totals = useMemo(() => {
     const w1 = products.reduce((s, p) => s + Number(p.w1 || 0), 0);
     const w2 = products.reduce((s, p) => s + Number(p.w2 || 0), 0);
-    const value = products.reduce((s, p) => s + ((Number(p.w1 || 0) + Number(p.w2 || 0)) * Number(p.cost || 0)), 0);
+
     return {
       w1,
       w2,
       all: w1 + w2,
-      value,
-      low: products.filter(p => (Number(p.w1 || 0) + Number(p.w2 || 0)) <= Number(p.min || 0)).length
+      low: products.filter((p) => Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0)).length
     };
   }, [products]);
 
   async function addMovement(type) {
-    const product = products.find(p => p.id === Number(form.productId));
+    const product = products.find((p) => p.id === Number(form.productId));
     const qty = Number(form.qty || 0);
+
     if (!product || qty <= 0) return;
 
     let updated = { ...product };
@@ -161,6 +175,12 @@ function App() {
       updated[key] = Math.max(0, Number(updated[key] || 0) - qty);
     }
 
+    if (type === 'Daily Use') {
+      from = 'Warehouse 1';
+      to = form.destination || 'Daily Use';
+      updated.w1 = Math.max(0, Number(updated.w1 || 0) - qty);
+    }
+
     if (type === 'Transfer') {
       from = form.warehouse;
       to = form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1';
@@ -174,20 +194,42 @@ function App() {
       }
     }
 
-    const { error } = await supabase.from('products').update({ w1: updated.w1, w2: updated.w2 }).eq('id', product.id);
+    const { error } = await supabase
+      .from('products')
+      .update({
+        w1: updated.w1,
+        w2: updated.w2
+      })
+      .eq('id', product.id);
+
     if (error) return alert(error.message);
 
     setMovements([
-      { id: Date.now(), date: new Date().toISOString().slice(0, 10), type, product: product.name, qty, from: from || 'Supplier', to, notes: form.notes },
+      {
+        id: Date.now(),
+        date: new Date().toISOString().slice(0, 10),
+        type,
+        product: product.name,
+        qty,
+        from: from || 'Supplier',
+        to,
+        notes: form.notes
+      },
       ...movements
     ]);
 
-    setForm({ ...form, qty: 1, destination: '', notes: '' });
+    setForm({
+      ...form,
+      qty: 1,
+      destination: '',
+      notes: ''
+    });
+
     await loadProducts();
   }
 
   function exportExcel() {
-    const rows = products.map(p => ({
+    const rows = products.map((p) => ({
       Code: p.code,
       Product: p.name,
       Category: p.category,
@@ -200,28 +242,34 @@ function App() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Inventory');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(movements), 'Movements');
     XLSX.writeFile(wb, 'camelot-inventory-report.xlsx');
   }
 
   function exportPDF() {
     const doc = new jsPDF();
     doc.setFontSize(18);
-    doc.text('Camelot Inventory Management', 14, 18);
-    doc.setFontSize(11);
-    doc.text(`Total Inventory Value: ${money(totals.value)}`, 14, 30);
+    doc.text('Camelot Inventory Report', 14, 18);
 
-    let y = 44;
-    products.forEach(p => {
-      doc.text(`${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`, 14, y);
+    let y = 34;
+
+    products.forEach((p) => {
+      doc.text(
+        `${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`,
+        14,
+        y
+      );
       y += 8;
     });
 
     doc.save('camelot-inventory-report.pdf');
   }
 
-  const filtered = products.filter(p => [p.name, p.code, p.category].join(' ').toLowerCase().includes(query.toLowerCase()));
+  const filtered = products.filter((p) =>
+    [p.name, p.code, p.category].join(' ').toLowerCase().includes(query.toLowerCase())
+  );
 
-  const chartData = products.map(p => ({
+  const chartData = products.map((p) => ({
     name: String(p.name || '').split(' ')[0],
     Warehouse1: Number(p.w1 || 0),
     Warehouse2: Number(p.w2 || 0)
@@ -232,18 +280,27 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <div className="logo">C</div>
-          <div><strong>CAMELOT</strong><span>Inventory Management</span></div>
+          <div>
+            <strong>CAMELOT</strong>
+            <span>Inventory Management</span>
+          </div>
         </div>
 
         <nav>
           {menu.map(([label, Icon]) => (
-            <button key={label} onClick={() => setActive(label)} className={active === label ? 'active' : ''}>
+            <button
+              key={label}
+              onClick={() => setActive(label)}
+              className={active === label ? 'active' : ''}
+            >
               <Icon size={18} /> {label}
             </button>
           ))}
         </nav>
 
-        <button className="logout"><LogOut size={18} /> Sign Out</button>
+        <button className="logout">
+          <LogOut size={18} /> Sign Out
+        </button>
       </aside>
 
       <main>
@@ -252,14 +309,16 @@ function App() {
             <p>Professional warehouse control</p>
             <h1>{active}</h1>
           </div>
-          <button className="primary" onClick={addProduct}>+ Add Product</button>
+
+          <button className="primary" onClick={addProduct}>
+            + Add Product
+          </button>
         </header>
 
         {active === 'Dashboard' && (
           <section>
             <div className="cards">
-              <Card title="Inventory Value" value={money(totals.value)} icon={BarChart3} />
-              <Card title="Total Stock" value={totals.all} />
+              <Card title="Total Stock" value={totals.all} icon={BarChart3} />
               <Card title="Warehouse 1" value={totals.w1} />
               <Card title="Warehouse 2" value={totals.w2} />
               <Card title="Low Stock Alerts" value={totals.low} />
@@ -287,27 +346,62 @@ function App() {
 
         {['Products', 'Inventory'].includes(active) && (
           <Panel title="Inventory List">
-            <button className="primary" onClick={addProduct}>Add Product</button>
+            <button className="primary" onClick={addProduct}>
+              Add Product
+            </button>
+
             <SearchBox query={query} setQuery={setQuery} />
-            <ProductTable rows={filtered} editProduct={editProduct} deleteProduct={deleteProduct} />
+
+            <ProductTable
+              rows={filtered}
+              editProduct={editProduct}
+              deleteProduct={deleteProduct}
+            />
           </Panel>
         )}
 
-        {['Stock In', 'Stock Out', 'Transfers'].includes(active) && (
+        {['Stock In', 'Stock Out', 'Daily Use', 'Transfers'].includes(active) && (
           <Panel title={`New ${active}`}>
-            <MovementForm form={form} setForm={setForm} products={products} active={active} />
+            <MovementForm
+              form={form}
+              setForm={setForm}
+              products={products}
+              active={active}
+            />
+
             <button className="primary wide" onClick={() => addMovement(active)}>
-              {active === 'Transfers' ? 'Transfer Stock' : `Save ${active}`}
+              {active === 'Transfers'
+                ? 'Transfer Stock'
+                : active === 'Daily Use'
+                ? 'Save Daily Use'
+                : `Save ${active}`}
             </button>
           </Panel>
         )}
 
         {active === 'Reports' && (
-          <Panel title="Reports & Export">
+          <Panel title="Reports & Print">
             <div className="report-actions">
-              <button onClick={exportPDF}><Download size={18} /> Export PDF</button>
-              <button onClick={exportExcel}><FileSpreadsheet size={18} /> Export Excel</button>
+              <button onClick={exportPDF}>
+                <Download size={18} /> Export PDF
+              </button>
+
+              <button onClick={exportExcel}>
+                <FileSpreadsheet size={18} /> Export Excel
+              </button>
+
+              <button onClick={() => window.print()}>
+                <Printer size={18} /> Print Report
+              </button>
             </div>
+
+            <ProductTable
+              rows={products}
+              editProduct={editProduct}
+              deleteProduct={deleteProduct}
+              hideActions
+            />
+
             <MovementTable rows={movements} />
           </Panel>
         )}
@@ -327,34 +421,57 @@ function App() {
 }
 
 function Card({ title, value, icon: Icon = Warehouse }) {
-  return <div className="card"><Icon size={22} /><p>{title}</p><h2>{value}</h2></div>;
+  return (
+    <div className="card">
+      <Icon size={22} />
+      <p>{title}</p>
+      <h2>{value}</h2>
+    </div>
+  );
 }
 
 function Panel({ title, children }) {
-  return <div className="panel"><h2>{title}</h2>{children}</div>;
+  return (
+    <div className="panel">
+      <h2>{title}</h2>
+      {children}
+    </div>
+  );
 }
 
 function SearchBox({ query, setQuery }) {
   return (
     <div className="search">
       <Search size={18} />
-      <input placeholder="Search product, code or category..." value={query} onChange={e => setQuery(e.target.value)} />
+      <input
+        placeholder="Search product, code or category..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
     </div>
   );
 }
 
-function ProductTable({ rows, editProduct, deleteProduct }) {
+function ProductTable({ rows, editProduct, deleteProduct, hideActions = false }) {
   return (
     <div className="table">
       <table>
         <thead>
           <tr>
-            <th>Code</th><th>Product</th><th>Category</th><th>Unit</th>
-            <th>Warehouse 1</th><th>Warehouse 2</th><th>Total</th><th>Status</th><th>Actions</th>
+            <th>Code</th>
+            <th>Product</th>
+            <th>Category</th>
+            <th>Unit</th>
+            <th>Warehouse 1</th>
+            <th>Warehouse 2</th>
+            <th>Total</th>
+            <th>Status</th>
+            {!hideActions && <th>Actions</th>}
           </tr>
         </thead>
+
         <tbody>
-          {rows.map(p => (
+          {rows.map((p) => (
             <tr key={p.id}>
               <td>{p.code}</td>
               <td>{p.name}</td>
@@ -368,10 +485,13 @@ function ProductTable({ rows, editProduct, deleteProduct }) {
                   {Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}
                 </span>
               </td>
-              <td>
-                <button onClick={() => editProduct(p)}>Edit</button>
-                <button onClick={() => deleteProduct(p.id)}>Delete</button>
-              </td>
+
+              {!hideActions && (
+                <td>
+                  <button onClick={() => editProduct(p)}>Edit</button>
+                  <button onClick={() => deleteProduct(p.id)}>Delete</button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -385,12 +505,25 @@ function MovementTable({ rows }) {
     <div className="table">
       <table>
         <thead>
-          <tr><th>Date</th><th>Type</th><th>Product</th><th>Qty</th><th>From</th><th>To</th></tr>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>From</th>
+            <th>To</th>
+          </tr>
         </thead>
+
         <tbody>
-          {rows.map(m => (
+          {rows.map((m) => (
             <tr key={m.id}>
-              <td>{m.date}</td><td>{m.type}</td><td>{m.product}</td><td>{m.qty}</td><td>{m.from}</td><td>{m.to}</td>
+              <td>{m.date}</td>
+              <td>{m.type}</td>
+              <td>{m.product}</td>
+              <td>{m.qty}</td>
+              <td>{m.from}</td>
+              <td>{m.to}</td>
             </tr>
           ))}
         </tbody>
@@ -404,41 +537,76 @@ function MovementForm({ form, setForm, products, active }) {
     <div className="form">
       <label>
         Product
-        <select value={form.productId} onChange={e => setForm({ ...form, productId: e.target.value })}>
-          {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        <select
+          value={form.productId}
+          onChange={(e) => setForm({ ...form, productId: e.target.value })}
+        >
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
         </select>
       </label>
 
       <label>
         Quantity
-        <input type="number" min="1" value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} />
+        <input
+          type="number"
+          min="1"
+          value={form.qty}
+          onChange={(e) => setForm({ ...form, qty: e.target.value })}
+        />
       </label>
 
-      <label>
-        {active === 'Transfers' ? 'From Warehouse' : 'Warehouse'}
-        <select value={form.warehouse} onChange={e => setForm({ ...form, warehouse: e.target.value })}>
-          <option>Warehouse 1</option>
-          <option>Warehouse 2</option>
-        </select>
-      </label>
-
-      {active === 'Stock Out' && (
+      {active !== 'Daily Use' && (
         <label>
-          Destination
-          <input value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })} placeholder="Job site, customer or department" />
+          {active === 'Transfers' ? 'From Warehouse' : 'Warehouse'}
+          <select
+            value={form.warehouse}
+            onChange={(e) => setForm({ ...form, warehouse: e.target.value })}
+          >
+            <option>Warehouse 1</option>
+            <option>Warehouse 2</option>
+          </select>
+        </label>
+      )}
+
+      {active === 'Daily Use' && (
+        <label>
+          Warehouse
+          <input disabled value="Warehouse 1" />
+        </label>
+      )}
+
+      {(active === 'Stock Out' || active === 'Daily Use') && (
+        <label>
+          Used For / Destination
+          <input
+            value={form.destination}
+            onChange={(e) => setForm({ ...form, destination: e.target.value })}
+            placeholder="Project, job site, department or daily usage"
+          />
         </label>
       )}
 
       {active === 'Transfers' && (
         <label>
           To Warehouse
-          <input disabled value={form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1'} />
+          <input
+            disabled
+            value={form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1'}
+          />
         </label>
       )}
 
       <label className="full">
         Notes
-        <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
+        <textarea
+          value={form.notes}
+          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          placeholder="Optional notes"
+        />
       </label>
     </div>
   );
