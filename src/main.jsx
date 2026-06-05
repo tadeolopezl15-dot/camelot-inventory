@@ -800,16 +800,22 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
 
   if (reportType === 'warehouse1') {
     return (
-      <Panel title="Warehouse 1 Report">
-        <WarehouseReportTable rows={products.filter((p) => Number(p.w1 || 0) > 0)} warehouse="Warehouse 1" />
+      <Panel title="Warehouse 1 Inventory Report">
+        <WarehouseReportTable
+          rows={products}
+          warehouse="Warehouse 1"
+        />
       </Panel>
     );
   }
 
   if (reportType === 'warehouse2') {
     return (
-      <Panel title="Warehouse 2 Report">
-        <WarehouseReportTable rows={products.filter((p) => Number(p.w2 || 0) > 0)} warehouse="Warehouse 2" />
+      <Panel title="Warehouse 2 Inventory Report">
+        <WarehouseReportTable
+          rows={products}
+          warehouse="Warehouse 2"
+        />
       </Panel>
     );
   }
@@ -912,7 +918,9 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
         </thead>
 
         <tbody>
-          {rows.map((p) => (
+          {rows
+  .filter((p) => Number(p[key] || 0) > 0)
+  .map((p) => (
             <tr key={p.id}>
               <td>{p.code}</td>
               <td>{p.name}</td>
