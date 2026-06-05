@@ -22,6 +22,10 @@ const menu = [
   ['Settings', Settings]
 ];
 
+function todayText() {
+  return new Date().toLocaleString('en-US');
+}
+
 function App() {
   const [active, setActive] = useState('Dashboard');
   const [products, setProducts] = useState([]);
@@ -145,6 +149,7 @@ function App() {
     const w2 = products.reduce((s, p) => s + Number(p.w2 || 0), 0);
 
     return {
+      products: products.length,
       w1,
       w2,
       all: w1 + w2,
@@ -228,8 +233,14 @@ function App() {
     await loadProducts();
   }
 
+  const lowStock = products.filter((p) => Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0));
+  const dailyUse = movements.filter((m) => m.type === 'Daily Use');
+  const stockIn = movements.filter((m) => m.type === 'Stock In');
+  const stockOut = movements.filter((m) => m.type === 'Stock Out');
+  const transfers = movements.filter((m) => m.type === 'Transfer');
+
   function exportExcel() {
-    const rows = products.map((p) => ({
+    const inventoryRows = products.map((p) => ({
       Code: p.code,
       Product: p.name,
       Category: p.category,
@@ -240,29 +251,189 @@ function App() {
       Status: Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'
     }));
 
+    const summaryRows = [
+      { Metric: 'Total Products', Value: totals.products },
+      { Metric: 'Warehouse 1 Stock', Value: totals.w1 },
+      { Metric: 'Warehouse 2 Stock', Value: totals.w2 },
+      { Metric: 'Total Inventory', Value: totals.all },
+      { Metric: 'Low Stock Items', Value: totals.low }
+    ];
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Inventory');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(movements), 'Movements');
-    XLSX.writeFile(wb, 'camelot-inventory-report.xlsx');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryRows), 'Inventory');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dailyUse), 'Daily Use');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stockIn), 'Stock In');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stockOut), 'Stock Out');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(transfers), 'Transfers');
+    XLSX.writeFile(wb, 'camelot-executive-inventory-report.xlsx');
   }
 
   function exportPDF() {
     const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text('Camelot Inventory Report', 14, 18);
+    let y = 18;
 
-    let y = 34;
+    doc.setFontSize(16);
+    doc.text('CAMELOT INVENTORY MANAGEMENT', 14, y);
+    y += 8;
 
+    doc.setFontSize(12);
+    doc.text('EXECUTIVE INVENTORY REPORT', 14, y);
+    y += 8;
+
+    doc.setFontSize(9);
+    doc.text(`Generated: ${todayText()}`, 14, y);
+    y += 12;
+
+    doc.setFontSize(11);
+    doc.text('SUMMARY', 14, y);
+    y += 8;
+
+    doc.setFontSize(9);
+    [
+      `Total Products: ${totals.products}`,
+      `Warehouse 1 Stock: ${totals.w1}`,
+      `Warehouse 2 Stock: ${totals.w2}`,
+      `Total Inventory: ${totals.all}`,
+      `Low Stock Items: ${totals.low}`
+    ].forEach((line) => {
+      doc.text(line, 14, y);
+      y += 6;
+    });
+
+    y += 6;
+    doc.setFontSize(11);
+    doc.text('INVENTORY STATUS', 14, y);
+    y += 8;
+
+    doc.setFontSize(8);
     products.forEach((p) => {
+      if (y > 280) {
+        doc.addPage();
+        y = 18;
+      }
+
       doc.text(
         `${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`,
         14,
         y
       );
-      y += 8;
+      y += 6;
     });
 
-    doc.save('camelot-inventory-report.pdf');
+    if (dailyUse.length > 0) {
+      y += 8;
+      doc.setFontSize(11);
+      doc.text('DAILY USE REPORT', 14, y);
+      y += 8;
+
+      doc.setFontSize(8);
+      dailyUse.forEach((m) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 18;
+        }
+
+        doc.text(`${m.date} | ${m.product} | Qty: ${m.qty} | Used For: ${m.to}`, 14, y);
+        y += 6;
+      });
+    }
+
+    doc.save('camelot-executive-inventory-report.pdf');
+  }
+
+  function printReport() {
+    const html = `
+      <html>
+        <head>
+          <title>Camelot Inventory Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 32px; color: #111827; }
+            h1 { font-size: 24px; margin: 0; }
+            h2 { font-size: 18px; margin-top: 28px; border-bottom: 1px solid #d1d5db; padding-bottom: 8px; }
+            p { margin: 4px 0; }
+            .header { border-bottom: 2px solid #111827; padding-bottom: 16px; margin-bottom: 24px; }
+            .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+            .card { border: 1px solid #d1d5db; padding: 12px; border-radius: 8px; }
+            .card strong { display: block; font-size: 20px; margin-top: 6px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+            th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; }
+            th { background: #f3f4f6; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>CAMELOT INVENTORY MANAGEMENT</h1>
+            <p>Executive Inventory Report</p>
+            <p>Generated: ${todayText()}</p>
+          </div>
+
+          <div class="summary">
+            <div class="card">Total Products<strong>${totals.products}</strong></div>
+            <div class="card">Warehouse 1<strong>${totals.w1}</strong></div>
+            <div class="card">Warehouse 2<strong>${totals.w2}</strong></div>
+            <div class="card">Total Inventory<strong>${totals.all}</strong></div>
+            <div class="card">Low Stock<strong>${totals.low}</strong></div>
+          </div>
+
+          <h2>Inventory Status</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>Warehouse 1</th><th>Warehouse 2</th><th>Total</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${products.map((p) => `
+                <tr>
+                  <td>${p.code}</td>
+                  <td>${p.name}</td>
+                  <td>${p.category}</td>
+                  <td>${p.unit}</td>
+                  <td>${p.w1}</td>
+                  <td>${p.w2}</td>
+                  <td>${Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
+                  <td>${Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>Daily Use Report</h2>
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Product</th><th>Qty</th><th>Used For</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              ${dailyUse.map((m) => `
+                <tr>
+                  <td>${m.date}</td><td>${m.product}</td><td>${m.qty}</td><td>${m.to}</td><td>${m.notes || ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>Stock Movements</h2>
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Type</th><th>Product</th><th>Qty</th><th>From</th><th>To</th></tr>
+            </thead>
+            <tbody>
+              ${movements.map((m) => `
+                <tr>
+                  <td>${m.date}</td><td>${m.type}</td><td>${m.product}</td><td>${m.qty}</td><td>${m.from}</td><td>${m.to}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.print();
   }
 
   const filtered = products.filter((p) =>
@@ -288,11 +459,7 @@ function App() {
 
         <nav>
           {menu.map(([label, Icon]) => (
-            <button
-              key={label}
-              onClick={() => setActive(label)}
-              className={active === label ? 'active' : ''}
-            >
+            <button key={label} onClick={() => setActive(label)} className={active === label ? 'active' : ''}>
               <Icon size={18} /> {label}
             </button>
           ))}
@@ -318,6 +485,7 @@ function App() {
         {active === 'Dashboard' && (
           <section>
             <div className="cards">
+              <Card title="Total Products" value={totals.products} icon={Boxes} />
               <Card title="Total Stock" value={totals.all} icon={BarChart3} />
               <Card title="Warehouse 1" value={totals.w1} />
               <Card title="Warehouse 2" value={totals.w2} />
@@ -346,63 +514,61 @@ function App() {
 
         {['Products', 'Inventory'].includes(active) && (
           <Panel title="Inventory List">
-            <button className="primary" onClick={addProduct}>
-              Add Product
-            </button>
-
+            <button className="primary" onClick={addProduct}>Add Product</button>
             <SearchBox query={query} setQuery={setQuery} />
-
-            <ProductTable
-              rows={filtered}
-              editProduct={editProduct}
-              deleteProduct={deleteProduct}
-            />
+            <ProductTable rows={filtered} editProduct={editProduct} deleteProduct={deleteProduct} />
           </Panel>
         )}
 
         {['Stock In', 'Stock Out', 'Daily Use', 'Transfers'].includes(active) && (
           <Panel title={`New ${active}`}>
-            <MovementForm
-              form={form}
-              setForm={setForm}
-              products={products}
-              active={active}
-            />
+            <MovementForm form={form} setForm={setForm} products={products} active={active} />
 
             <button className="primary wide" onClick={() => addMovement(active)}>
-              {active === 'Transfers'
-                ? 'Transfer Stock'
-                : active === 'Daily Use'
-                ? 'Save Daily Use'
-                : `Save ${active}`}
+              {active === 'Transfers' ? 'Transfer Stock' : active === 'Daily Use' ? 'Save Daily Use' : `Save ${active}`}
             </button>
           </Panel>
         )}
 
         {active === 'Reports' && (
-          <Panel title="Reports & Print">
+          <Panel title="Executive Inventory Report">
             <div className="report-actions">
-              <button onClick={exportPDF}>
-                <Download size={18} /> Export PDF
-              </button>
-
-              <button onClick={exportExcel}>
-                <FileSpreadsheet size={18} /> Export Excel
-              </button>
-
-              <button onClick={() => window.print()}>
-                <Printer size={18} /> Print Report
-              </button>
+              <button onClick={exportPDF}><Download size={18} /> Export PDF</button>
+              <button onClick={exportExcel}><FileSpreadsheet size={18} /> Export Excel</button>
+              <button onClick={printReport}><Printer size={18} /> Print Report</button>
             </div>
 
-            <ProductTable
-              rows={products}
-              editProduct={editProduct}
-              deleteProduct={deleteProduct}
-              hideActions
-            />
+            <div className="cards">
+              <Card title="Total Products" value={totals.products} icon={Boxes} />
+              <Card title="Warehouse 1" value={totals.w1} />
+              <Card title="Warehouse 2" value={totals.w2} />
+              <Card title="Total Inventory" value={totals.all} />
+              <Card title="Low Stock" value={totals.low} />
+            </div>
 
-            <MovementTable rows={movements} />
+            <Panel title="Low Stock Alerts">
+              <ProductTable rows={lowStock} hideActions />
+            </Panel>
+
+            <Panel title="Inventory Status">
+              <ProductTable rows={products} hideActions />
+            </Panel>
+
+            <Panel title="Daily Use Report">
+              <MovementTable rows={dailyUse} />
+            </Panel>
+
+            <Panel title="Stock In Report">
+              <MovementTable rows={stockIn} />
+            </Panel>
+
+            <Panel title="Stock Out Report">
+              <MovementTable rows={stockOut} />
+            </Panel>
+
+            <Panel title="Transfers Report">
+              <MovementTable rows={transfers} />
+            </Panel>
           </Panel>
         )}
 
@@ -494,6 +660,12 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
               )}
             </tr>
           ))}
+
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={hideActions ? 8 : 9}>No records found.</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -511,7 +683,7 @@ function MovementTable({ rows }) {
             <th>Product</th>
             <th>Qty</th>
             <th>From</th>
-            <th>To</th>
+            <th>To / Used For</th>
           </tr>
         </thead>
 
@@ -526,6 +698,12 @@ function MovementTable({ rows }) {
               <td>{m.to}</td>
             </tr>
           ))}
+
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan="6">No records found.</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -537,35 +715,22 @@ function MovementForm({ form, setForm, products, active }) {
     <div className="form">
       <label>
         Product
-        <select
-          value={form.productId}
-          onChange={(e) => setForm({ ...form, productId: e.target.value })}
-        >
+        <select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })}>
           {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
+            <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
       </label>
 
       <label>
         Quantity
-        <input
-          type="number"
-          min="1"
-          value={form.qty}
-          onChange={(e) => setForm({ ...form, qty: e.target.value })}
-        />
+        <input type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
       </label>
 
       {active !== 'Daily Use' && (
         <label>
           {active === 'Transfers' ? 'From Warehouse' : 'Warehouse'}
-          <select
-            value={form.warehouse}
-            onChange={(e) => setForm({ ...form, warehouse: e.target.value })}
-          >
+          <select value={form.warehouse} onChange={(e) => setForm({ ...form, warehouse: e.target.value })}>
             <option>Warehouse 1</option>
             <option>Warehouse 2</option>
           </select>
@@ -593,20 +758,13 @@ function MovementForm({ form, setForm, products, active }) {
       {active === 'Transfers' && (
         <label>
           To Warehouse
-          <input
-            disabled
-            value={form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1'}
-          />
+          <input disabled value={form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1'} />
         </label>
       )}
 
       <label className="full">
         Notes
-        <textarea
-          value={form.notes}
-          onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          placeholder="Optional notes"
-        />
+        <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
       </label>
     </div>
   );
