@@ -22,8 +22,24 @@ const menu = [
   ['Settings', Settings]
 ];
 
+const reportOptions = [
+  { value: 'executive', label: 'Executive Report' },
+  { value: 'inventory', label: 'Inventory Report' },
+  { value: 'warehouse1', label: 'Warehouse 1 Report' },
+  { value: 'warehouse2', label: 'Warehouse 2 Report' },
+  { value: 'dailyuse', label: 'Daily Use Report' },
+  { value: 'stockin', label: 'Stock In Report' },
+  { value: 'stockout', label: 'Stock Out Report' },
+  { value: 'transfers', label: 'Transfers Report' },
+  { value: 'lowstock', label: 'Low Stock Report' }
+];
+
 function todayText() {
   return new Date().toLocaleString('en-US');
+}
+
+function getReportTitle(reportType) {
+  return reportOptions.find((item) => item.value === reportType)?.label || 'Report';
 }
 
 function App() {
@@ -42,6 +58,7 @@ function App() {
 
   useEffect(() => {
     loadProducts();
+    loadMovements();
   }, []);
 
   async function loadProducts() {
@@ -74,6 +91,31 @@ function App() {
         productId: prev.productId || formatted[0].id
       }));
     }
+  }
+
+  async function loadMovements() {
+    const { data, error } = await supabase
+      .from('inventory_movements')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.log('Movements table error:', error.message);
+      return;
+    }
+
+    const formatted = (data || []).map((m) => ({
+      id: m.id,
+      date: m.date,
+      type: m.type,
+      product: m.product,
+      qty: Number(m.qty || 0),
+      from: m.from_location || '',
+      to: m.to_location || '',
+      notes: m.notes || ''
+    }));
+
+    setMovements(formatted);
   }
 
   async function addProduct() {
@@ -210,19 +252,24 @@ function App() {
 
     if (error) return alert(error.message);
 
-    setMovements([
-      {
-        id: Date.now(),
-        date: new Date().toISOString().slice(0, 10),
-        type,
-        product: product.name,
-        qty,
-        from: from || 'Supplier',
-        to,
-        notes: form.notes
-      },
-      ...movements
-    ]);
+    const movement = {
+      product_id: product.id,
+      date: new Date().toISOString().slice(0, 10),
+      type,
+      product: product.name,
+      qty,
+      from_location: from || 'Supplier',
+      to_location: to,
+      notes: form.notes
+    };
+
+    const { error: movementError } = await supabase
+      .from('inventory_movements')
+      .insert(movement);
+
+    if (movementError) {
+      console.log('Movement save error:', movementError.message);
+    }
 
     setForm({
       ...form,
@@ -232,6 +279,7 @@ function App() {
     });
 
     await loadProducts();
+    await loadMovements();
   }
 
   const lowStock = products.filter((p) => Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0));
@@ -240,222 +288,174 @@ function App() {
   const stockOut = movements.filter((m) => m.type === 'Stock Out');
   const transfers = movements.filter((m) => m.type === 'Transfer');
 
-
-  function getReportTitle() {
-    const titles = {
-      executive: 'Executive Inventory Report',
-      inventory: 'Inventory Report',
-      warehouse1: 'Warehouse 1 Report',
-      warehouse2: 'Warehouse 2 Report',
-      dailyuse: 'Daily Use Report',
-      stockin: 'Stock In Report',
-      stockout: 'Stock Out Report',
-      transfers: 'Transfers Report',
-      lowstock: 'Low Stock Report'
-    };
-
-    return titles[reportType] || 'Inventory Report';
-  }
-
-  function getSelectedProductRows() {
+  const selectedRows = useMemo(() => {
+    if (reportType === 'executive') return products;
+    if (reportType === 'inventory') return products;
     if (reportType === 'warehouse1') return products.filter((p) => Number(p.w1 || 0) > 0);
     if (reportType === 'warehouse2') return products.filter((p) => Number(p.w2 || 0) > 0);
     if (reportType === 'lowstock') return lowStock;
-    if (reportType === 'inventory') return products;
-    if (reportType === 'executive') return products;
-    return [];
-  }
-
-  function getSelectedMovementRows() {
     if (reportType === 'dailyuse') return dailyUse;
     if (reportType === 'stockin') return stockIn;
     if (reportType === 'stockout') return stockOut;
     if (reportType === 'transfers') return transfers;
-    if (reportType === 'executive') return movements;
-    return [];
-  }
+    return products;
+  }, [reportType, products, lowStock, dailyUse, stockIn, stockOut, transfers]);
 
   function exportExcel() {
-    const title = getReportTitle();
-    const productRows = getSelectedProductRows().map((p) => ({
-      Code: p.code,
-      Product: p.name,
-      Category: p.category,
-      Unit: p.unit,
-      'Warehouse 1': p.w1,
-      'Warehouse 2': p.w2,
-      Total: Number(p.w1 || 0) + Number(p.w2 || 0),
-      Status: Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'
-    }));
-
-    const movementRows = getSelectedMovementRows().map((m) => ({
-      Date: m.date,
-      Type: m.type,
-      Product: m.product,
-      Quantity: m.qty,
-      From: m.from,
-      'To / Used For': m.to,
-      Notes: m.notes || ''
-    }));
-
-    const summaryRows = [
-      { Metric: 'Report', Value: title },
-      { Metric: 'Generated', Value: todayText() },
-      { Metric: 'Total Products', Value: totals.products },
-      { Metric: 'Warehouse 1 Stock', Value: totals.w1 },
-      { Metric: 'Warehouse 2 Stock', Value: totals.w2 },
-      { Metric: 'Total Inventory', Value: totals.all },
-      { Metric: 'Low Stock Items', Value: totals.low }
-    ];
-
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
 
-    if (productRows.length > 0) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(productRows), title.slice(0, 31));
+    if (reportType === 'executive') {
+      const summaryRows = [
+        { Metric: 'Total Products', Value: totals.products },
+        { Metric: 'Warehouse 1 Stock', Value: totals.w1 },
+        { Metric: 'Warehouse 2 Stock', Value: totals.w2 },
+        { Metric: 'Total Inventory', Value: totals.all },
+        { Metric: 'Low Stock Items', Value: totals.low }
+      ];
+
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatInventoryRows(products)), 'Inventory');
+      XLSX.writeFile(wb, 'camelot-executive-report.xlsx');
+      return;
     }
 
-    if (movementRows.length > 0) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(movementRows), 'Movements');
+    if (reportType === 'warehouse1') {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatWarehouseRows(products, 'Warehouse 1')), 'Warehouse 1');
+      XLSX.writeFile(wb, 'camelot-warehouse-1-report.xlsx');
+      return;
     }
 
-    if (productRows.length === 0 && movementRows.length === 0) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ Message: 'No records found.' }]), 'Report');
+    if (reportType === 'warehouse2') {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatWarehouseRows(products, 'Warehouse 2')), 'Warehouse 2');
+      XLSX.writeFile(wb, 'camelot-warehouse-2-report.xlsx');
+      return;
     }
 
-    XLSX.writeFile(wb, `${title.toLowerCase().replaceAll(' ', '-')}.xlsx`);
+    if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(selectedRows), getReportTitle(reportType));
+      XLSX.writeFile(wb, `camelot-${reportType}-report.xlsx`);
+      return;
+    }
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatInventoryRows(selectedRows)), getReportTitle(reportType));
+    XLSX.writeFile(wb, `camelot-${reportType}-report.xlsx`);
   }
 
   function exportPDF() {
-    const title = getReportTitle();
-    const productRows = getSelectedProductRows();
-    const movementRows = getSelectedMovementRows();
-
     const doc = new jsPDF();
     let y = 18;
-
-    function pageCheck() {
-      if (y > 280) {
-        doc.addPage();
-        y = 18;
-      }
-    }
 
     doc.setFontSize(16);
     doc.text('CAMELOT INVENTORY MANAGEMENT', 14, y);
     y += 8;
 
     doc.setFontSize(12);
-    doc.text(title.toUpperCase(), 14, y);
+    doc.text(getReportTitle(reportType).toUpperCase(), 14, y);
     y += 8;
 
     doc.setFontSize(9);
     doc.text(`Generated: ${todayText()}`, 14, y);
     y += 12;
 
-    doc.setFontSize(11);
-    doc.text('SUMMARY', 14, y);
-    y += 8;
+    if (reportType === 'executive') {
+      doc.setFontSize(11);
+      doc.text('SUMMARY', 14, y);
+      y += 8;
 
-    doc.setFontSize(9);
-    [
-      `Total Products: ${totals.products}`,
-      `Warehouse 1 Stock: ${totals.w1}`,
-      `Warehouse 2 Stock: ${totals.w2}`,
-      `Total Inventory: ${totals.all}`,
-      `Low Stock Items: ${totals.low}`
-    ].forEach((line) => {
-      pageCheck();
-      doc.text(line, 14, y);
+      doc.setFontSize(9);
+      [
+        `Total Products: ${totals.products}`,
+        `Warehouse 1 Stock: ${totals.w1}`,
+        `Warehouse 2 Stock: ${totals.w2}`,
+        `Total Inventory: ${totals.all}`,
+        `Low Stock Items: ${totals.low}`
+      ].forEach((line) => {
+        doc.text(line, 14, y);
+        y += 6;
+      });
+
+      y += 8;
+      doc.setFontSize(11);
+      doc.text('INVENTORY STATUS', 14, y);
+      y += 8;
+
+      doc.setFontSize(8);
+      products.forEach((p) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 18;
+        }
+
+        doc.text(`${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`, 14, y);
+        y += 6;
+      });
+
+      doc.save('camelot-executive-report.pdf');
+      return;
+    }
+
+    doc.setFontSize(8);
+
+    if (reportType === 'warehouse1') {
+      products.filter((p) => Number(p.w1 || 0) > 0).forEach((p) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 18;
+        }
+        const status = Number(p.w1 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK';
+        doc.text(`${p.code} | ${p.name} | ${p.category} | ${p.unit} | Warehouse 1: ${p.w1} | ${status}`, 14, y);
+        y += 6;
+      });
+
+      doc.save('camelot-warehouse-1-report.pdf');
+      return;
+    }
+
+    if (reportType === 'warehouse2') {
+      products.filter((p) => Number(p.w2 || 0) > 0).forEach((p) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 18;
+        }
+        const status = Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK';
+        doc.text(`${p.code} | ${p.name} | ${p.category} | ${p.unit} | Warehouse 2: ${p.w2} | ${status}`, 14, y);
+        y += 6;
+      });
+
+      doc.save('camelot-warehouse-2-report.pdf');
+      return;
+    }
+
+    if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) {
+      selectedRows.forEach((m) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 18;
+        }
+
+        doc.text(`${m.date} | ${m.type} | ${m.product} | Qty: ${m.qty} | From: ${m.from} | To: ${m.to}`, 14, y);
+        y += 6;
+      });
+
+      doc.save(`camelot-${reportType}-report.pdf`);
+      return;
+    }
+
+    selectedRows.forEach((p) => {
+      if (y > 280) {
+        doc.addPage();
+        y = 18;
+      }
+
+      doc.text(`${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`, 14, y);
       y += 6;
     });
 
-    if (productRows.length > 0) {
-      y += 8;
-      doc.setFontSize(11);
-      doc.text('PRODUCTS', 14, y);
-      y += 8;
-
-      doc.setFontSize(8);
-      productRows.forEach((p) => {
-        pageCheck();
-        doc.text(
-          `${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`,
-          14,
-          y
-        );
-        y += 6;
-      });
-    }
-
-    if (movementRows.length > 0) {
-      y += 8;
-      doc.setFontSize(11);
-      doc.text('MOVEMENTS', 14, y);
-      y += 8;
-
-      doc.setFontSize(8);
-      movementRows.forEach((m) => {
-        pageCheck();
-        doc.text(`${m.date} | ${m.type} | ${m.product} | Qty: ${m.qty} | ${m.from} → ${m.to}`, 14, y);
-        y += 6;
-      });
-    }
-
-    if (productRows.length === 0 && movementRows.length === 0) {
-      y += 8;
-      doc.text('No records found.', 14, y);
-    }
-
-    doc.save(`${title.toLowerCase().replaceAll(' ', '-')}.pdf`);
+    doc.save(`camelot-${reportType}-report.pdf`);
   }
 
   function printReport() {
-    const title = getReportTitle();
-    const productRows = getSelectedProductRows();
-    const movementRows = getSelectedMovementRows();
-
-    const productTable = productRows.length > 0 ? `
-      <h2>Products</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>Warehouse 1</th><th>Warehouse 2</th><th>Total</th><th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${productRows.map((p) => `
-            <tr>
-              <td>${p.code}</td>
-              <td>${p.name}</td>
-              <td>${p.category}</td>
-              <td>${p.unit}</td>
-              <td>${p.w1}</td>
-              <td>${p.w2}</td>
-              <td>${Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
-              <td>${Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    ` : '';
-
-    const movementTable = movementRows.length > 0 ? `
-      <h2>Movements</h2>
-      <table>
-        <thead>
-          <tr><th>Date</th><th>Type</th><th>Product</th><th>Qty</th><th>From</th><th>To / Used For</th><th>Notes</th></tr>
-        </thead>
-        <tbody>
-          ${movementRows.map((m) => `
-            <tr>
-              <td>${m.date}</td><td>${m.type}</td><td>${m.product}</td><td>${m.qty}</td><td>${m.from}</td><td>${m.to}</td><td>${m.notes || ''}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    ` : '';
-
+    const title = getReportTitle(reportType);
     const html = `
       <html>
         <head>
@@ -472,7 +472,6 @@ function App() {
             table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
             th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; }
             th { background: #f3f4f6; }
-            @media print { body { padding: 18px; } }
           </style>
         </head>
         <body>
@@ -482,17 +481,7 @@ function App() {
             <p>Generated: ${todayText()}</p>
           </div>
 
-          <div class="summary">
-            <div class="card">Total Products<strong>${totals.products}</strong></div>
-            <div class="card">Warehouse 1<strong>${totals.w1}</strong></div>
-            <div class="card">Warehouse 2<strong>${totals.w2}</strong></div>
-            <div class="card">Total Inventory<strong>${totals.all}</strong></div>
-            <div class="card">Low Stock<strong>${totals.low}</strong></div>
-          </div>
-
-          ${productTable}
-          ${movementTable}
-          ${productRows.length === 0 && movementRows.length === 0 ? '<p>No records found.</p>' : ''}
+          ${getPrintableReportHtml(reportType, products, selectedRows, totals)}
         </body>
       </html>
     `;
@@ -599,28 +588,13 @@ function App() {
 
         {active === 'Reports' && (
           <Panel title="Reports Center">
-            <div style={{ marginBottom: '20px' }}>
+            <div className="form" style={{ marginBottom: '20px' }}>
               <label>
                 Report Type
-                <select
-                  value={reportType}
-                  onChange={(e) => setReportType(e.target.value)}
-                  style={{
-                    marginLeft: '10px',
-                    padding: '10px',
-                    borderRadius: '10px',
-                    border: '1px solid #d1d5db'
-                  }}
-                >
-                  <option value="executive">Executive Report</option>
-                  <option value="inventory">Inventory Report</option>
-                  <option value="warehouse1">Warehouse 1 Report</option>
-                  <option value="warehouse2">Warehouse 2 Report</option>
-                  <option value="dailyuse">Daily Use Report</option>
-                  <option value="stockin">Stock In Report</option>
-                  <option value="stockout">Stock Out Report</option>
-                  <option value="transfers">Transfers Report</option>
-                  <option value="lowstock">Low Stock Report</option>
+                <select value={reportType} onChange={(e) => setReportType(e.target.value)}>
+                  {reportOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -631,77 +605,17 @@ function App() {
               <button onClick={printReport}><Printer size={18} /> Print Selected Report</button>
             </div>
 
-            {reportType === 'executive' && (
-              <>
-                <div className="cards">
-                  <Card title="Total Products" value={totals.products} icon={Boxes} />
-                  <Card title="Warehouse 1" value={totals.w1} />
-                  <Card title="Warehouse 2" value={totals.w2} />
-                  <Card title="Total Inventory" value={totals.all} />
-                  <Card title="Low Stock" value={totals.low} />
-                </div>
-
-                <Panel title="Low Stock Alerts">
-                  <ProductTable rows={lowStock} hideActions />
-                </Panel>
-
-                <Panel title="Recent Daily Use">
-                  <MovementTable rows={dailyUse.slice(0, 10)} />
-                </Panel>
-
-                <Panel title="Recent Movements">
-                  <MovementTable rows={movements.slice(0, 10)} />
-                </Panel>
-              </>
-            )}
-
-            {reportType === 'inventory' && (
-              <Panel title="Inventory Report">
-                <ProductTable rows={products} hideActions />
-              </Panel>
-            )}
-
-            {reportType === 'warehouse1' && (
-              <Panel title="Warehouse 1 Report">
-                <ProductTable rows={products.filter((p) => Number(p.w1 || 0) > 0)} hideActions />
-              </Panel>
-            )}
-
-            {reportType === 'warehouse2' && (
-              <Panel title="Warehouse 2 Report">
-                <ProductTable rows={products.filter((p) => Number(p.w2 || 0) > 0)} hideActions />
-              </Panel>
-            )}
-
-            {reportType === 'dailyuse' && (
-              <Panel title="Daily Use Report">
-                <MovementTable rows={dailyUse} />
-              </Panel>
-            )}
-
-            {reportType === 'stockin' && (
-              <Panel title="Stock In Report">
-                <MovementTable rows={stockIn} />
-              </Panel>
-            )}
-
-            {reportType === 'stockout' && (
-              <Panel title="Stock Out Report">
-                <MovementTable rows={stockOut} />
-              </Panel>
-            )}
-
-            {reportType === 'transfers' && (
-              <Panel title="Transfers Report">
-                <MovementTable rows={transfers} />
-              </Panel>
-            )}
-
-            {reportType === 'lowstock' && (
-              <Panel title="Low Stock Report">
-                <ProductTable rows={lowStock} hideActions />
-              </Panel>
-            )}
+            <ReportContent
+              reportType={reportType}
+              products={products}
+              selectedRows={selectedRows}
+              totals={totals}
+              lowStock={lowStock}
+              dailyUse={dailyUse}
+              stockIn={stockIn}
+              stockOut={stockOut}
+              transfers={transfers}
+            />
           </Panel>
         )}
 
@@ -716,6 +630,234 @@ function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function formatInventoryRows(rows) {
+  return rows.map((p) => ({
+    Code: p.code,
+    Product: p.name,
+    Category: p.category,
+    Unit: p.unit,
+    'Warehouse 1': p.w1,
+    'Warehouse 2': p.w2,
+    Total: Number(p.w1 || 0) + Number(p.w2 || 0),
+    Status: Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'
+  }));
+}
+
+function formatWarehouseRows(rows, warehouse) {
+  const key = warehouse === 'Warehouse 1' ? 'w1' : 'w2';
+
+  return rows
+    .filter((p) => Number(p[key] || 0) > 0)
+    .map((p) => ({
+      Code: p.code,
+      Product: p.name,
+      Category: p.category,
+      Unit: p.unit,
+      [warehouse]: Number(p[key] || 0),
+      Status: Number(p[key] || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'
+    }));
+}
+
+function getPrintableReportHtml(reportType, products, selectedRows, totals) {
+  if (reportType === 'executive') {
+    return `
+      <div class="summary">
+        <div class="card">Total Products<strong>${totals.products}</strong></div>
+        <div class="card">Warehouse 1<strong>${totals.w1}</strong></div>
+        <div class="card">Warehouse 2<strong>${totals.w2}</strong></div>
+        <div class="card">Total Inventory<strong>${totals.all}</strong></div>
+        <div class="card">Low Stock<strong>${totals.low}</strong></div>
+      </div>
+      ${inventoryTableHtml(products)}
+    `;
+  }
+
+  if (reportType === 'warehouse1') {
+    return warehouseTableHtml(products, 'Warehouse 1');
+  }
+
+  if (reportType === 'warehouse2') {
+    return warehouseTableHtml(products, 'Warehouse 2');
+  }
+
+  if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) {
+    return movementTableHtml(selectedRows);
+  }
+
+  return inventoryTableHtml(selectedRows);
+}
+
+function inventoryTableHtml(rows) {
+  return `
+    <h2>Inventory Status</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>Warehouse 1</th><th>Warehouse 2</th><th>Total</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((p) => `
+          <tr>
+            <td>${p.code}</td>
+            <td>${p.name}</td>
+            <td>${p.category}</td>
+            <td>${p.unit}</td>
+            <td>${p.w1}</td>
+            <td>${p.w2}</td>
+            <td>${Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
+            <td>${Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function warehouseTableHtml(rows, warehouse) {
+  const key = warehouse === 'Warehouse 1' ? 'w1' : 'w2';
+
+  return `
+    <h2>${warehouse} Report</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>${warehouse}</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.filter((p) => Number(p[key] || 0) > 0).map((p) => `
+          <tr>
+            <td>${p.code}</td>
+            <td>${p.name}</td>
+            <td>${p.category}</td>
+            <td>${p.unit}</td>
+            <td>${Number(p[key] || 0)}</td>
+            <td>${Number(p[key] || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function movementTableHtml(rows) {
+  return `
+    <h2>Movement Report</h2>
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Type</th><th>Product</th><th>Qty</th><th>From</th><th>To / Used For</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map((m) => `
+          <tr>
+            <td>${m.date}</td>
+            <td>${m.type}</td>
+            <td>${m.product}</td>
+            <td>${m.qty}</td>
+            <td>${m.from}</td>
+            <td>${m.to}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers }) {
+  if (reportType === 'executive') {
+    return (
+      <>
+        <div className="cards">
+          <Card title="Total Products" value={totals.products} icon={Boxes} />
+          <Card title="Warehouse 1" value={totals.w1} />
+          <Card title="Warehouse 2" value={totals.w2} />
+          <Card title="Total Inventory" value={totals.all} />
+          <Card title="Low Stock" value={totals.low} />
+        </div>
+
+        <Panel title="Low Stock Alerts">
+          <ProductTable rows={lowStock} hideActions />
+        </Panel>
+
+        <Panel title="Inventory Status">
+          <ProductTable rows={products} hideActions />
+        </Panel>
+      </>
+    );
+  }
+
+  if (reportType === 'inventory') {
+    return (
+      <Panel title="Inventory Report">
+        <ProductTable rows={products} hideActions />
+      </Panel>
+    );
+  }
+
+  if (reportType === 'warehouse1') {
+    return (
+      <Panel title="Warehouse 1 Report">
+        <WarehouseReportTable rows={products.filter((p) => Number(p.w1 || 0) > 0)} warehouse="Warehouse 1" />
+      </Panel>
+    );
+  }
+
+  if (reportType === 'warehouse2') {
+    return (
+      <Panel title="Warehouse 2 Report">
+        <WarehouseReportTable rows={products.filter((p) => Number(p.w2 || 0) > 0)} warehouse="Warehouse 2" />
+      </Panel>
+    );
+  }
+
+  if (reportType === 'lowstock') {
+    return (
+      <Panel title="Low Stock Report">
+        <ProductTable rows={lowStock} hideActions />
+      </Panel>
+    );
+  }
+
+  if (reportType === 'dailyuse') {
+    return (
+      <Panel title="Daily Use Report">
+        <MovementTable rows={dailyUse} />
+      </Panel>
+    );
+  }
+
+  if (reportType === 'stockin') {
+    return (
+      <Panel title="Stock In Report">
+        <MovementTable rows={stockIn} />
+      </Panel>
+    );
+  }
+
+  if (reportType === 'stockout') {
+    return (
+      <Panel title="Stock Out Report">
+        <MovementTable rows={stockOut} />
+      </Panel>
+    );
+  }
+
+  if (reportType === 'transfers') {
+    return (
+      <Panel title="Transfers Report">
+        <MovementTable rows={transfers} />
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel title="Selected Report">
+      <ProductTable rows={selectedRows} hideActions />
+    </Panel>
   );
 }
 
@@ -797,6 +939,50 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
           {rows.length === 0 && (
             <tr>
               <td colSpan={hideActions ? 8 : 9}>No records found.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function WarehouseReportTable({ rows, warehouse }) {
+  const key = warehouse === 'Warehouse 1' ? 'w1' : 'w2';
+
+  return (
+    <div className="table">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Product</th>
+            <th>Category</th>
+            <th>Unit</th>
+            <th>{warehouse}</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {rows.map((p) => (
+            <tr key={p.id}>
+              <td>{p.code}</td>
+              <td>{p.name}</td>
+              <td>{p.category}</td>
+              <td>{p.unit}</td>
+              <td>{Number(p[key] || 0)}</td>
+              <td>
+                <span className={Number(p[key] || 0) <= Number(p.min || 0) ? 'badge low' : 'badge'}>
+                  {Number(p[key] || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}
+                </span>
+              </td>
+            </tr>
+          ))}
+
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan="6">No records found.</td>
             </tr>
           )}
         </tbody>
