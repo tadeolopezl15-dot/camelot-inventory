@@ -420,7 +420,7 @@ function App() {
       windowWidth: 794,
       autoPaging: 'text',
       html2canvas: {
-        scale: 0.25,
+        scale: 1.5,
         useCORS: true
       },
       callback: function (pdf) {
