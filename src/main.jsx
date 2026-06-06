@@ -1,6 +1,21 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BarChart3, Boxes, Building2, ClipboardList, Download, FileSpreadsheet, LayoutDashboard, LogOut, PackageMinus, PackagePlus, Printer, Repeat2, Search, Settings, ShieldCheck, Truck, Users, Warehouse } from 'lucide-react';
+import {
+  BarChart3,
+  Boxes,
+  ClipboardList,
+  Download,
+  FileSpreadsheet,
+  LayoutDashboard,
+  LogOut,
+  PackageMinus,
+  PackagePlus,
+  Printer,
+  Repeat2,
+  Search,
+  Settings,
+  Warehouse
+} from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
@@ -16,8 +31,7 @@ const menu = [
   ['Daily Use', ClipboardList],
   ['Transfers', Repeat2],
   ['Reports', ClipboardList],
-  ['Settings', Settings],
-  ['Users', ShieldCheck]
+  ['Settings', Settings]
 ];
 
 const reportOptions = [
@@ -32,8 +46,28 @@ const reportOptions = [
   { value: 'lowstock', label: 'Low Stock Report' }
 ];
 
+const defaultSettings = {
+  id: null,
+  company_name: 'Camelot Inventory Management',
+  company_phone: '',
+  company_email: '',
+  company_address: '',
+  warehouse1_name: 'Warehouse 1',
+  warehouse2_name: 'Warehouse 2',
+  low_stock_alert: 10,
+  report_title: 'Camelot Inventory Management',
+  pdf_layout: 'Professional',
+  currency: 'USD',
+  language: 'English',
+  timezone: 'America/New_York'
+};
+
 function todayText() {
   return new Date().toLocaleString('en-US');
+}
+
+function isoDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function getReportTitle(reportType) {
@@ -46,21 +80,7 @@ function App() {
   const [movements, setMovements] = useState([]);
   const [query, setQuery] = useState('');
   const [reportType, setReportType] = useState('executive');
-  const [settings, setSettings] = useState({
-    id: null,
-    company_name: 'Camelot Inventory Management',
-    company_phone: '',
-    company_email: '',
-    company_address: '',
-    warehouse1_name: 'Warehouse 1',
-    warehouse2_name: 'Warehouse 2',
-    low_stock_alert: 10,
-    report_title: 'Camelot Inventory Management',
-    pdf_layout: 'Professional',
-    currency: 'USD',
-    language: 'English',
-    timezone: 'America/New_York'
-  });
+  const [settings, setSettings] = useState(defaultSettings);
   const [form, setForm] = useState({
     productId: '',
     qty: 1,
@@ -75,7 +95,6 @@ function App() {
     loadSettings();
   }, []);
 
-
   async function loadSettings() {
     const { data, error } = await supabase
       .from('settings')
@@ -89,23 +108,20 @@ function App() {
     }
 
     if (data && data.length > 0) {
-      setSettings((prev) => ({
-        ...prev,
-        ...data[0]
-      }));
+      setSettings({ ...defaultSettings, ...data[0] });
     }
   }
 
   async function saveSettings() {
     const payload = {
-      company_name: settings.company_name || 'Camelot Inventory Management',
+      company_name: settings.company_name || defaultSettings.company_name,
       company_phone: settings.company_phone || '',
       company_email: settings.company_email || '',
       company_address: settings.company_address || '',
       warehouse1_name: settings.warehouse1_name || 'Warehouse 1',
       warehouse2_name: settings.warehouse2_name || 'Warehouse 2',
       low_stock_alert: Number(settings.low_stock_alert || 10),
-      report_title: settings.report_title || 'Camelot Inventory Management',
+      report_title: settings.report_title || settings.company_name || defaultSettings.report_title,
       pdf_layout: settings.pdf_layout || 'Professional',
       currency: settings.currency || 'USD',
       language: settings.language || 'English',
@@ -113,21 +129,12 @@ function App() {
     };
 
     if (settings.id) {
-      const { error } = await supabase
-        .from('settings')
-        .update(payload)
-        .eq('id', settings.id);
-
+      const { error } = await supabase.from('settings').update(payload).eq('id', settings.id);
       if (error) return alert(error.message);
     } else {
-      const { data, error } = await supabase
-        .from('settings')
-        .insert(payload)
-        .select()
-        .single();
-
+      const { data, error } = await supabase.from('settings').insert(payload).select().single();
       if (error) return alert(error.message);
-      setSettings((prev) => ({ ...prev, ...data }));
+      setSettings({ ...defaultSettings, ...data });
     }
 
     alert('Settings saved.');
@@ -135,10 +142,12 @@ function App() {
   }
 
   function updateSetting(field, value) {
-    setSettings((prev) => ({
-      ...prev,
-      [field]: value
-    }));
+    setSettings((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function resetSettingsDefaults() {
+    if (!confirm('Reset settings to defaults?')) return;
+    setSettings((prev) => ({ ...prev, ...defaultSettings, id: prev.id }));
   }
 
   function exportBackup() {
@@ -149,36 +158,15 @@ function App() {
       movements
     };
 
-    const blob = new Blob([JSON.stringify(backup, null, 2)], {
-      type: 'application/json'
-    });
-
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+
     a.href = url;
     a.download = 'camelot-backup.json';
     a.click();
+
     URL.revokeObjectURL(url);
-  }
-
-  function resetSettingsDefaults() {
-    if (!confirm('Reset settings to defaults?')) return;
-
-    setSettings((prev) => ({
-      ...prev,
-      company_name: 'Camelot Inventory Management',
-      company_phone: '',
-      company_email: '',
-      company_address: '',
-      warehouse1_name: 'Warehouse 1',
-      warehouse2_name: 'Warehouse 2',
-      low_stock_alert: 10,
-      report_title: 'Camelot Inventory Management',
-      pdf_layout: 'Professional',
-      currency: 'USD',
-      language: 'English',
-      timezone: 'America/New_York'
-    }));
   }
 
   async function loadProducts() {
@@ -226,6 +214,7 @@ function App() {
 
     const formatted = (data || []).map((m) => ({
       id: m.id,
+      productId: m.product_id,
       date: m.date,
       type: m.type,
       product: m.product,
@@ -248,8 +237,8 @@ function App() {
     const category = prompt('Category', 'General') || 'General';
     const unit = prompt('Unit', 'units') || 'units';
     const minStock = prompt('Minimum Stock', '0') || '0';
-    const w1 = prompt('Warehouse 1 Stock', '0') || '0';
-    const w2 = prompt('Warehouse 2 Stock', '0') || '0';
+    const w1 = prompt(`${settings.warehouse1_name || 'Warehouse 1'} Stock`, '0') || '0';
+    const w2 = prompt(`${settings.warehouse2_name || 'Warehouse 2'} Stock`, '0') || '0';
 
     const { error } = await supabase.from('products').insert({
       code,
@@ -275,8 +264,8 @@ function App() {
     const category = prompt('Category', product.category) || 'General';
     const unit = prompt('Unit', product.unit) || 'units';
     const minStock = prompt('Minimum Stock', product.min) || '0';
-    const w1 = prompt('Warehouse 1 Stock', product.w1) || '0';
-    const w2 = prompt('Warehouse 2 Stock', product.w2) || '0';
+    const w1 = prompt(`${settings.warehouse1_name || 'Warehouse 1'} Stock`, product.w1) || '0';
+    const w2 = prompt(`${settings.warehouse2_name || 'Warehouse 2'} Stock`, product.w2) || '0';
 
     const { error } = await supabase
       .from('products')
@@ -298,10 +287,7 @@ function App() {
   async function deleteProduct(id) {
     if (!confirm('Delete this product?')) return;
 
-    const { error } = await supabase
-      .from('products')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabase.from('products').delete().eq('id', id);
 
     if (error) return alert(error.message);
     await loadProducts();
@@ -310,15 +296,18 @@ function App() {
   const totals = useMemo(() => {
     const w1 = products.reduce((s, p) => s + Number(p.w1 || 0), 0);
     const w2 = products.reduce((s, p) => s + Number(p.w2 || 0), 0);
+    const lowLevel = Number(settings.low_stock_alert || 0);
 
     return {
       products: products.length,
       w1,
       w2,
       all: w1 + w2,
-      low: products.filter((p) => Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0)).length
+      low: products.filter((p) => Number(p.w1 || 0) + Number(p.w2 || 0) <= Math.max(Number(p.min || 0), lowLevel)).length,
+      dailyUseToday: movements.filter((m) => m.type === 'Daily Use' && m.date === isoDate()).reduce((s, m) => s + Number(m.qty || 0), 0),
+      transfersToday: movements.filter((m) => m.type === 'Transfer' && m.date === isoDate()).length
     };
-  }, [products]);
+  }, [products, movements, settings.low_stock_alert]);
 
   async function addMovement(type) {
     const product = products.find((p) => p.id === Number(form.productId));
@@ -364,17 +353,14 @@ function App() {
 
     const { error } = await supabase
       .from('products')
-      .update({
-        w1: updated.w1,
-        w2: updated.w2
-      })
+      .update({ w1: updated.w1, w2: updated.w2 })
       .eq('id', product.id);
 
     if (error) return alert(error.message);
 
     const movement = {
       product_id: product.id,
-      date: new Date().toISOString().slice(0, 10),
+      date: isoDate(),
       type,
       product: product.name,
       qty,
@@ -383,26 +369,89 @@ function App() {
       notes: form.notes
     };
 
-    const { error: movementError } = await supabase
-      .from('inventory_movements')
-      .insert(movement);
+    const { error: movementError } = await supabase.from('inventory_movements').insert(movement);
 
     if (movementError) {
+      alert(movementError.message);
       console.log('Movement save error:', movementError.message);
     }
 
-    setForm({
-      ...form,
-      qty: 1,
-      destination: '',
-      notes: ''
-    });
+    setForm({ ...form, qty: 1, destination: '', notes: '' });
 
     await loadProducts();
     await loadMovements();
   }
 
-  const lowStock = products.filter((p) => Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0));
+  async function deleteRestoreMovement(movement) {
+    if (!movement) return;
+
+    const ok = confirm('Delete this movement and restore inventory?');
+    if (!ok) return;
+
+    const product = products.find((p) => {
+      if (movement.productId && p.id === Number(movement.productId)) return true;
+      return String(p.name || '').trim().toLowerCase() === String(movement.product || '').trim().toLowerCase();
+    });
+
+    if (!product) {
+      alert('Product not found. Inventory cannot be restored.');
+      return;
+    }
+
+    const qty = Number(movement.qty || 0);
+    if (qty <= 0) return alert('Invalid quantity.');
+
+    let nextW1 = Number(product.w1 || 0);
+    let nextW2 = Number(product.w2 || 0);
+
+    if (movement.type === 'Daily Use') {
+      nextW1 += qty;
+    }
+
+    if (movement.type === 'Stock Out') {
+      if (movement.from === 'Warehouse 2') nextW2 += qty;
+      else nextW1 += qty;
+    }
+
+    if (movement.type === 'Stock In') {
+      if (movement.to === 'Warehouse 2') nextW2 = Math.max(0, nextW2 - qty);
+      else nextW1 = Math.max(0, nextW1 - qty);
+    }
+
+    if (movement.type === 'Transfer') {
+      if (movement.from === 'Warehouse 1' && movement.to === 'Warehouse 2') {
+        nextW1 += qty;
+        nextW2 = Math.max(0, nextW2 - qty);
+      } else if (movement.from === 'Warehouse 2' && movement.to === 'Warehouse 1') {
+        nextW2 += qty;
+        nextW1 = Math.max(0, nextW1 - qty);
+      }
+    }
+
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ w1: nextW1, w2: nextW2 })
+      .eq('id', product.id);
+
+    if (updateError) return alert(updateError.message);
+
+    const { error: deleteError } = await supabase
+      .from('inventory_movements')
+      .delete()
+      .eq('id', movement.id);
+
+    if (deleteError) return alert(deleteError.message);
+
+    await loadProducts();
+    await loadMovements();
+    alert('Movement deleted and inventory restored.');
+  }
+
+  const lowStock = products.filter((p) => {
+    const threshold = Math.max(Number(p.min || 0), Number(settings.low_stock_alert || 0));
+    return Number(p.w1 || 0) + Number(p.w2 || 0) <= threshold;
+  });
+
   const dailyUse = movements.filter((m) => m.type === 'Daily Use');
   const stockIn = movements.filter((m) => m.type === 'Stock In');
   const stockOut = movements.filter((m) => m.type === 'Stock Out');
@@ -427,26 +476,28 @@ function App() {
     if (reportType === 'executive') {
       const summaryRows = [
         { Metric: 'Total Products', Value: totals.products },
-        { Metric: 'Warehouse 1 Stock', Value: totals.w1 },
-        { Metric: 'Warehouse 2 Stock', Value: totals.w2 },
+        { Metric: settings.warehouse1_name, Value: totals.w1 },
+        { Metric: settings.warehouse2_name, Value: totals.w2 },
         { Metric: 'Total Inventory', Value: totals.all },
-        { Metric: 'Low Stock Items', Value: totals.low }
+        { Metric: 'Low Stock Items', Value: totals.low },
+        { Metric: 'Daily Use Today', Value: totals.dailyUseToday },
+        { Metric: 'Transfers Today', Value: totals.transfersToday }
       ];
 
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatInventoryRows(products)), 'Inventory');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatInventoryRows(products, settings)), 'Inventory');
       XLSX.writeFile(wb, 'camelot-executive-report.xlsx');
       return;
     }
 
     if (reportType === 'warehouse1') {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatWarehouseRows(products, 'Warehouse 1')), 'Warehouse 1');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatWarehouseRows(products, 'Warehouse 1', settings)), settings.warehouse1_name);
       XLSX.writeFile(wb, 'camelot-warehouse-1-report.xlsx');
       return;
     }
 
     if (reportType === 'warehouse2') {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatWarehouseRows(products, 'Warehouse 2')), 'Warehouse 2');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatWarehouseRows(products, 'Warehouse 2', settings)), settings.warehouse2_name);
       XLSX.writeFile(wb, 'camelot-warehouse-2-report.xlsx');
       return;
     }
@@ -457,97 +508,203 @@ function App() {
       return;
     }
 
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatInventoryRows(selectedRows)), getReportTitle(reportType));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatInventoryRows(selectedRows, settings)), getReportTitle(reportType));
     XLSX.writeFile(wb, `camelot-${reportType}-report.xlsx`);
   }
 
-  async function exportPDF() {
-    const title = getReportTitle(reportType);
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; padding: 32px; color: #111827; width: 794px; background: #ffffff;">
-        <div style="border-bottom: 2px solid #111827; padding-bottom: 16px; margin-bottom: 24px;">
-          <h1 style="font-size: 24px; margin: 0;">${settings.report_title || settings.company_name || 'CAMELOT INVENTORY MANAGEMENT'}</h1>
-          <p style="margin: 4px 0;">${title}</p>
-          <p style="margin: 4px 0;">Generated: ${todayText()}</p>
-        </div>
-
-        <style>
-          h2 {
-            font-size: 18px;
-            margin-top: 28px;
-            border-bottom: 1px solid #d1d5db;
-            padding-bottom: 8px;
-          }
-
-          .summary {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 12px;
-            margin-bottom: 24px;
-          }
-
-          .card {
-            border: 1px solid #d1d5db;
-            padding: 12px;
-            border-radius: 8px;
-          }
-
-          .card strong {
-            display: block;
-            font-size: 20px;
-            margin-top: 6px;
-          }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 12px;
-            font-size: 12px;
-          }
-
-          th, td {
-            border: 1px solid #d1d5db;
-            padding: 7px;
-            text-align: left;
-          }
-
-          th {
-            background: #f3f4f6;
-          }
-        </style>
-
-        ${getPrintableReportHtml(reportType, products, selectedRows, totals)}
-      </div>
-    `;
-
-    const container = document.createElement('div');
-    container.innerHTML = html;
-    container.style.position = 'fixed';
-    container.style.left = '-9999px';
-    container.style.top = '0';
-    container.style.width = '794px';
-    container.style.background = '#ffffff';
-
-    document.body.appendChild(container);
-
+  function exportPDF() {
     const doc = new jsPDF('p', 'mm', 'a4');
+    const title = getReportTitle(reportType);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    let y = 16;
 
-    await doc.html(container, {
-      x: 0,
-      y: 0,
-      width: 210,
-      windowWidth: 794,
-      autoPaging: 'text',
-      html2canvas: {
-        scale: 0.25,
-        useCORS: true
-      },
-      callback: function (pdf) {
-        pdf.save(`camelot-${reportType}-report.pdf`);
-        document.body.removeChild(container);
+    function addHeader() {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text(settings.report_title || settings.company_name || 'Camelot Inventory Management', margin, y);
+      y += 8;
+
+      doc.setFontSize(12);
+      doc.text(title.toUpperCase(), margin, y);
+      y += 7;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Generated: ${todayText()}`, margin, y);
+      y += 8;
+
+      doc.setDrawColor(31, 41, 55);
+      doc.setLineWidth(0.5);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 8;
+    }
+
+    function drawSectionTitle(sectionTitle) {
+      if (y + 14 > pageHeight - 16) {
+        doc.addPage();
+        y = 16;
+        addHeader();
       }
-    });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(sectionTitle, margin, y);
+      y += 5;
+      doc.setDrawColor(209, 213, 219);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 6;
+    }
+
+    function drawSummaryCards() {
+      const cards = [
+        ['Total Products', totals.products],
+        [settings.warehouse1_name, totals.w1],
+        [settings.warehouse2_name, totals.w2],
+        ['Total Inventory', totals.all],
+        ['Low Stock', totals.low]
+      ];
+
+      const gap = 3;
+      const cardWidth = (pageWidth - margin * 2 - gap * 4) / 5;
+      const cardHeight = 18;
+      let x = margin;
+
+      cards.forEach(([label, value]) => {
+        doc.setDrawColor(209, 213, 219);
+        doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.text(String(label), x + 2, y + 6, { maxWidth: cardWidth - 4 });
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text(String(value), x + 2, y + 14);
+        x += cardWidth + gap;
+      });
+
+      y += cardHeight + 10;
+    }
+
+    function drawTable(columns, rows, sectionTitle) {
+      drawSectionTitle(sectionTitle);
+
+      const usableWidth = pageWidth - margin * 2;
+      const totalUnits = columns.reduce((sum, col) => sum + col.width, 0);
+      const widths = columns.map((col) => (col.width / totalUnits) * usableWidth);
+      const rowHeight = 8;
+
+      function drawTableHeader() {
+        let x = margin;
+        doc.setFillColor(243, 244, 246);
+        doc.setDrawColor(209, 213, 219);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+
+        columns.forEach((col, i) => {
+          doc.rect(x, y, widths[i], rowHeight, 'FD');
+          doc.text(col.label, x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
+          x += widths[i];
+        });
+
+        y += rowHeight;
+      }
+
+      drawTableHeader();
+
+      if (!rows || rows.length === 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.rect(margin, y, usableWidth, rowHeight);
+        doc.text('No records found.', margin + 2, y + 5.3);
+        y += rowHeight + 4;
+        return;
+      }
+
+      rows.forEach((row) => {
+        if (y + rowHeight > pageHeight - 16) {
+          doc.addPage();
+          y = 16;
+          addHeader();
+          drawTableHeader();
+        }
+
+        let x = margin;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setDrawColor(209, 213, 219);
+
+        columns.forEach((col, i) => {
+          const value = row[col.key] === undefined || row[col.key] === null ? '' : String(row[col.key]);
+          doc.rect(x, y, widths[i], rowHeight);
+          doc.text(value, x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
+          x += widths[i];
+        });
+
+        y += rowHeight;
+      });
+
+      y += 6;
+    }
+
+    const inventoryColumns = [
+      { label: 'Code', key: 'code', width: 12 },
+      { label: 'Product', key: 'product', width: 32 },
+      { label: 'Category', key: 'category', width: 18 },
+      { label: 'Unit', key: 'unit', width: 14 },
+      { label: 'WH 1', key: 'w1', width: 12 },
+      { label: 'WH 2', key: 'w2', width: 12 },
+      { label: 'Total', key: 'total', width: 12 },
+      { label: 'Status', key: 'status', width: 18 }
+    ];
+
+    const warehouseColumns = [
+      { label: 'Code', key: 'code', width: 14 },
+      { label: 'Product', key: 'product', width: 38 },
+      { label: 'Category', key: 'category', width: 22 },
+      { label: 'Unit', key: 'unit', width: 16 },
+      { label: 'Stock', key: 'quantity', width: 14 },
+      { label: 'Status', key: 'status', width: 18 }
+    ];
+
+    const movementColumns = [
+      { label: 'Date', key: 'date', width: 18 },
+      { label: 'Type', key: 'type', width: 18 },
+      { label: 'Product', key: 'product', width: 34 },
+      { label: 'Qty', key: 'qty', width: 10 },
+      { label: 'From', key: 'from', width: 24 },
+      { label: 'To / Used For', key: 'to', width: 28 }
+    ];
+
+    addHeader();
+
+    if (reportType === 'executive') {
+      drawSummaryCards();
+      drawTable(inventoryColumns, inventoryRows(products, settings), 'Inventory Status');
+    } else if (reportType === 'inventory') {
+      drawTable(inventoryColumns, inventoryRows(products, settings), 'Inventory Report');
+    } else if (reportType === 'warehouse1') {
+      drawTable(warehouseColumns, warehouseRows(products, 'Warehouse 1', settings), `${settings.warehouse1_name} Report`);
+    } else if (reportType === 'warehouse2') {
+      drawTable(warehouseColumns, warehouseRows(products, 'Warehouse 2', settings), `${settings.warehouse2_name} Report`);
+    } else if (reportType === 'lowstock') {
+      drawTable(inventoryColumns, inventoryRows(lowStock, settings), 'Low Stock Report');
+    } else if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) {
+      drawTable(movementColumns, movementRows(selectedRows), title);
+    } else {
+      drawTable(inventoryColumns, inventoryRows(selectedRows, settings), title);
+    }
+
+    const pageCount = doc.internal.getNumberOfPages();
+
+    for (let i = 1; i <= pageCount; i += 1) {
+      doc.setPage(i);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 24, pageHeight - 8);
+    }
+
+    doc.save(`camelot-${reportType}-report.pdf`);
   }
 
   function printReport() {
@@ -572,17 +729,18 @@ function App() {
         </head>
         <body>
           <div class="header">
-            <h1>${settings.report_title || settings.company_name || 'CAMELOT INVENTORY MANAGEMENT'}</h1>
+            <h1>${settings.report_title || settings.company_name || 'Camelot Inventory Management'}</h1>
             <p>${title}</p>
             <p>Generated: ${todayText()}</p>
           </div>
 
-          ${getPrintableReportHtml(reportType, products, selectedRows, totals)}
+          ${getPrintableReportHtml(reportType, products, selectedRows, totals, settings)}
         </body>
       </html>
     `;
 
     const win = window.open('', '_blank');
+
     win.document.write(html);
     win.document.close();
     win.print();
@@ -629,7 +787,7 @@ function App() {
             <h1>{active}</h1>
           </div>
 
-          {!['Settings', 'Users'].includes(active) && (
+          {!['Settings'].includes(active) && (
             <button className="primary" onClick={addProduct}>
               + Add Product
             </button>
@@ -641,9 +799,10 @@ function App() {
             <div className="cards">
               <Card title="Total Products" value={totals.products} icon={Boxes} />
               <Card title="Total Stock" value={totals.all} icon={BarChart3} />
-              <Card title="Warehouse 1" value={totals.w1} />
-              <Card title="Warehouse 2" value={totals.w2} />
+              <Card title={settings.warehouse1_name} value={totals.w1} />
+              <Card title={settings.warehouse2_name} value={totals.w2} />
               <Card title="Low Stock Alerts" value={totals.low} />
+              <Card title="Daily Use Today" value={totals.dailyUseToday} />
             </div>
 
             <div className="grid">
@@ -670,13 +829,13 @@ function App() {
           <Panel title="Inventory List">
             <button className="primary" onClick={addProduct}>Add Product</button>
             <SearchBox query={query} setQuery={setQuery} />
-            <ProductTable rows={filtered} editProduct={editProduct} deleteProduct={deleteProduct} />
+            <ProductTable rows={filtered} editProduct={editProduct} deleteProduct={deleteProduct} settings={settings} />
           </Panel>
         )}
 
         {['Stock In', 'Stock Out', 'Daily Use', 'Transfers'].includes(active) && (
           <Panel title={`New ${active}`}>
-            <MovementForm form={form} setForm={setForm} products={products} active={active} />
+            <MovementForm form={form} setForm={setForm} products={products} active={active} settings={settings} />
 
             <button className="primary wide" onClick={() => addMovement(active)}>
               {active === 'Transfers' ? 'Transfer Stock' : active === 'Daily Use' ? 'Save Daily Use' : `Save ${active}`}
@@ -713,6 +872,8 @@ function App() {
               stockIn={stockIn}
               stockOut={stockOut}
               transfers={transfers}
+              settings={settings}
+              deleteRestoreMovement={deleteRestoreMovement}
             />
           </Panel>
         )}
@@ -728,86 +889,114 @@ function App() {
             />
           </Panel>
         )}
-
-        {active === 'Users' && (
-          <Panel title="Users">
-            <div className="empty">
-              <ShieldCheck size={44} />
-              <h2>Users & Permissions</h2>
-              <p>This module is ready for Administrator, Manager and Viewer roles.</p>
-              <p>Recommended roles: Administrator, Manager, Warehouse Clerk and Viewer.</p>
-            </div>
-          </Panel>
-        )}
       </main>
     </div>
   );
 }
 
-function formatInventoryRows(rows) {
+function productStatus(p, settings) {
+  const threshold = Math.max(Number(p.min || 0), Number(settings.low_stock_alert || 0));
+  return Number(p.w1 || 0) + Number(p.w2 || 0) <= threshold ? 'Low Stock' : 'OK';
+}
+
+function warehouseStatus(p, key, settings) {
+  const threshold = Math.max(Number(p.min || 0), Number(settings.low_stock_alert || 0));
+  return Number(p[key] || 0) <= threshold ? 'Low Stock' : 'OK';
+}
+
+function inventoryRows(rows, settings) {
   return rows.map((p) => ({
-    Code: p.code,
-    Product: p.name,
-    Category: p.category,
-    Unit: p.unit,
-    'Warehouse 1': p.w1,
-    'Warehouse 2': p.w2,
-    Total: Number(p.w1 || 0) + Number(p.w2 || 0),
-    Status: Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'
+    code: p.code,
+    product: p.name,
+    category: p.category,
+    unit: p.unit,
+    w1: Number(p.w1 || 0),
+    w2: Number(p.w2 || 0),
+    total: Number(p.w1 || 0) + Number(p.w2 || 0),
+    status: productStatus(p, settings)
   }));
 }
 
-function formatWarehouseRows(rows, warehouse) {
+function warehouseRows(rows, warehouse, settings) {
   const key = warehouse === 'Warehouse 1' ? 'w1' : 'w2';
 
   return rows
     .filter((p) => Number(p[key] || 0) > 0)
     .map((p) => ({
-      Code: p.code,
-      Product: p.name,
-      Category: p.category,
-      Unit: p.unit,
-      [warehouse]: Number(p[key] || 0),
-      Status: Number(p[key] || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'
+      code: p.code,
+      product: p.name,
+      category: p.category,
+      unit: p.unit,
+      quantity: Number(p[key] || 0),
+      status: warehouseStatus(p, key, settings)
     }));
 }
 
-function getPrintableReportHtml(reportType, products, selectedRows, totals) {
+function movementRows(rows) {
+  return rows.map((m) => ({
+    date: m.date,
+    type: m.type,
+    product: m.product,
+    qty: m.qty,
+    from: m.from,
+    to: m.to
+  }));
+}
+
+function formatInventoryRows(rows, settings) {
+  return inventoryRows(rows, settings).map((p) => ({
+    Code: p.code,
+    Product: p.product,
+    Category: p.category,
+    Unit: p.unit,
+    [settings.warehouse1_name || 'Warehouse 1']: p.w1,
+    [settings.warehouse2_name || 'Warehouse 2']: p.w2,
+    Total: p.total,
+    Status: p.status
+  }));
+}
+
+function formatWarehouseRows(rows, warehouse, settings) {
+  const label = warehouse === 'Warehouse 1' ? settings.warehouse1_name : settings.warehouse2_name;
+
+  return warehouseRows(rows, warehouse, settings).map((p) => ({
+    Code: p.code,
+    Product: p.product,
+    Category: p.category,
+    Unit: p.unit,
+    [label || warehouse]: p.quantity,
+    Status: p.status
+  }));
+}
+
+function getPrintableReportHtml(reportType, products, selectedRows, totals, settings) {
   if (reportType === 'executive') {
     return `
       <div class="summary">
         <div class="card">Total Products<strong>${totals.products}</strong></div>
-        <div class="card">Warehouse 1<strong>${totals.w1}</strong></div>
-        <div class="card">Warehouse 2<strong>${totals.w2}</strong></div>
+        <div class="card">${settings.warehouse1_name}<strong>${totals.w1}</strong></div>
+        <div class="card">${settings.warehouse2_name}<strong>${totals.w2}</strong></div>
         <div class="card">Total Inventory<strong>${totals.all}</strong></div>
         <div class="card">Low Stock<strong>${totals.low}</strong></div>
       </div>
-      ${inventoryTableHtml(products)}
+      ${inventoryTableHtml(products, settings)}
     `;
   }
 
-  if (reportType === 'warehouse1') {
-    return warehouseTableHtml(products, 'Warehouse 1');
-  }
+  if (reportType === 'warehouse1') return warehouseTableHtml(products, 'Warehouse 1', settings);
+  if (reportType === 'warehouse2') return warehouseTableHtml(products, 'Warehouse 2', settings);
+  if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) return movementTableHtml(selectedRows);
 
-  if (reportType === 'warehouse2') {
-    return warehouseTableHtml(products, 'Warehouse 2');
-  }
-
-  if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) {
-    return movementTableHtml(selectedRows);
-  }
-
-  return inventoryTableHtml(selectedRows);
+  return inventoryTableHtml(selectedRows, settings);
 }
 
-function inventoryTableHtml(rows) {
+function inventoryTableHtml(rows, settings) {
   return `
     <h2>Inventory Status</h2>
     <table>
       <thead>
         <tr>
-          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>Warehouse 1</th><th>Warehouse 2</th><th>Total</th><th>Status</th>
+          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>${settings.warehouse1_name}</th><th>${settings.warehouse2_name}</th><th>Total</th><th>Status</th>
         </tr>
       </thead>
       <tbody>
@@ -820,36 +1009,38 @@ function inventoryTableHtml(rows) {
             <td>${p.w1}</td>
             <td>${p.w2}</td>
             <td>${Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
-            <td>${Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}</td>
+            <td>${productStatus(p, settings)}</td>
           </tr>
-        `).join('')}
+        `).join('') || '<tr><td colspan="8">No records found.</td></tr>'}
       </tbody>
     </table>
   `;
 }
 
-function warehouseTableHtml(rows, warehouse) {
+function warehouseTableHtml(rows, warehouse, settings) {
   const key = warehouse === 'Warehouse 1' ? 'w1' : 'w2';
+  const label = warehouse === 'Warehouse 1' ? settings.warehouse1_name : settings.warehouse2_name;
+  const filtered = rows.filter((p) => Number(p[key] || 0) > 0);
 
   return `
-    <h2>${warehouse} Report</h2>
+    <h2>${label} Report</h2>
     <table>
       <thead>
         <tr>
-          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>${warehouse}</th><th>Status</th>
+          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>${label}</th><th>Status</th>
         </tr>
       </thead>
       <tbody>
-        ${rows.filter((p) => Number(p[key] || 0) > 0).map((p) => `
+        ${filtered.map((p) => `
           <tr>
             <td>${p.code}</td>
             <td>${p.name}</td>
             <td>${p.category}</td>
             <td>${p.unit}</td>
             <td>${Number(p[key] || 0)}</td>
-            <td>${Number(p[key] || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}</td>
+            <td>${warehouseStatus(p, key, settings)}</td>
           </tr>
-        `).join('')}
+        `).join('') || '<tr><td colspan="6">No records found.</td></tr>'}
       </tbody>
     </table>
   `;
@@ -872,30 +1063,30 @@ function movementTableHtml(rows) {
             <td>${m.from}</td>
             <td>${m.to}</td>
           </tr>
-        `).join('')}
+        `).join('') || '<tr><td colspan="6">No records found.</td></tr>'}
       </tbody>
     </table>
   `;
 }
 
-function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers }) {
+function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers, settings, deleteRestoreMovement }) {
   if (reportType === 'executive') {
     return (
       <>
         <div className="cards">
           <Card title="Total Products" value={totals.products} icon={Boxes} />
-          <Card title="Warehouse 1" value={totals.w1} />
-          <Card title="Warehouse 2" value={totals.w2} />
+          <Card title={settings.warehouse1_name} value={totals.w1} />
+          <Card title={settings.warehouse2_name} value={totals.w2} />
           <Card title="Total Inventory" value={totals.all} />
           <Card title="Low Stock" value={totals.low} />
         </div>
 
         <Panel title="Low Stock Alerts">
-          <ProductTable rows={lowStock} hideActions />
+          <ProductTable rows={lowStock} hideActions settings={settings} />
         </Panel>
 
         <Panel title="Inventory Status">
-          <ProductTable rows={products} hideActions />
+          <ProductTable rows={products} hideActions settings={settings} />
         </Panel>
       </>
     );
@@ -904,29 +1095,23 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'inventory') {
     return (
       <Panel title="Inventory Report">
-        <ProductTable rows={products} hideActions />
+        <ProductTable rows={products} hideActions settings={settings} />
       </Panel>
     );
   }
 
   if (reportType === 'warehouse1') {
     return (
-      <Panel title="Warehouse 1 Inventory Report">
-        <WarehouseReportTable
-          rows={products}
-          warehouse="Warehouse 1"
-        />
+      <Panel title={`${settings.warehouse1_name} Inventory Report`}>
+        <WarehouseReportTable rows={products} warehouse="Warehouse 1" settings={settings} />
       </Panel>
     );
   }
 
   if (reportType === 'warehouse2') {
     return (
-      <Panel title="Warehouse 2 Inventory Report">
-        <WarehouseReportTable
-          rows={products}
-          warehouse="Warehouse 2"
-        />
+      <Panel title={`${settings.warehouse2_name} Inventory Report`}>
+        <WarehouseReportTable rows={products} warehouse="Warehouse 2" settings={settings} />
       </Panel>
     );
   }
@@ -934,7 +1119,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'lowstock') {
     return (
       <Panel title="Low Stock Report">
-        <ProductTable rows={lowStock} hideActions />
+        <ProductTable rows={lowStock} hideActions settings={settings} />
       </Panel>
     );
   }
@@ -942,7 +1127,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'dailyuse') {
     return (
       <Panel title="Daily Use Report">
-        <MovementTable rows={dailyUse} />
+        <MovementTable rows={dailyUse} showActions onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -950,7 +1135,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockin') {
     return (
       <Panel title="Stock In Report">
-        <MovementTable rows={stockIn} />
+        <MovementTable rows={stockIn} showActions onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -958,7 +1143,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockout') {
     return (
       <Panel title="Stock Out Report">
-        <MovementTable rows={stockOut} />
+        <MovementTable rows={stockOut} showActions onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -966,14 +1151,14 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'transfers') {
     return (
       <Panel title="Transfers Report">
-        <MovementTable rows={transfers} />
+        <MovementTable rows={transfers} showActions onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
 
   return (
     <Panel title="Selected Report">
-      <ProductTable rows={selectedRows} hideActions />
+      <ProductTable rows={selectedRows} hideActions settings={settings} />
     </Panel>
   );
 }
@@ -1010,7 +1195,9 @@ function SearchBox({ query, setQuery }) {
   );
 }
 
-function ProductTable({ rows, editProduct, deleteProduct, hideActions = false }) {
+function ProductTable({ rows, editProduct, deleteProduct, hideActions = false, settings }) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+
   return (
     <div className="table">
       <table>
@@ -1020,8 +1207,8 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
             <th>Product</th>
             <th>Category</th>
             <th>Unit</th>
-            <th>Warehouse 1</th>
-            <th>Warehouse 2</th>
+            <th>{settings.warehouse1_name}</th>
+            <th>{settings.warehouse2_name}</th>
             <th>Total</th>
             <th>Status</th>
             {!hideActions && <th>Actions</th>}
@@ -1029,7 +1216,7 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
         </thead>
 
         <tbody>
-          {rows.map((p) => (
+          {safeRows.map((p) => (
             <tr key={p.id}>
               <td>{p.code}</td>
               <td>{p.name}</td>
@@ -1039,8 +1226,8 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
               <td>{p.w2}</td>
               <td>{Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
               <td>
-                <span className={Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'badge low' : 'badge'}>
-                  {Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}
+                <span className={productStatus(p, settings) === 'Low Stock' ? 'badge low' : 'badge'}>
+                  {productStatus(p, settings)}
                 </span>
               </td>
 
@@ -1053,7 +1240,7 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
             </tr>
           ))}
 
-          {rows.length === 0 && (
+          {safeRows.length === 0 && (
             <tr>
               <td colSpan={hideActions ? 8 : 9}>No records found.</td>
             </tr>
@@ -1064,8 +1251,11 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
   );
 }
 
-function WarehouseReportTable({ rows, warehouse }) {
+function WarehouseReportTable({ rows, warehouse, settings }) {
+  const safeRows = Array.isArray(rows) ? rows : [];
   const key = warehouse === 'Warehouse 1' ? 'w1' : 'w2';
+  const label = warehouse === 'Warehouse 1' ? settings.warehouse1_name : settings.warehouse2_name;
+  const filtered = safeRows.filter((p) => Number(p[key] || 0) > 0);
 
   return (
     <div className="table">
@@ -1076,13 +1266,13 @@ function WarehouseReportTable({ rows, warehouse }) {
             <th>Product</th>
             <th>Category</th>
             <th>Unit</th>
-            <th>{warehouse}</th>
+            <th>{label}</th>
             <th>Status</th>
           </tr>
         </thead>
 
         <tbody>
-          {rows.map((p) => (
+          {filtered.map((p) => (
             <tr key={p.id}>
               <td>{p.code}</td>
               <td>{p.name}</td>
@@ -1090,14 +1280,14 @@ function WarehouseReportTable({ rows, warehouse }) {
               <td>{p.unit}</td>
               <td>{Number(p[key] || 0)}</td>
               <td>
-                <span className={Number(p[key] || 0) <= Number(p.min || 0) ? 'badge low' : 'badge'}>
-                  {Number(p[key] || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK'}
+                <span className={warehouseStatus(p, key, settings) === 'Low Stock' ? 'badge low' : 'badge'}>
+                  {warehouseStatus(p, key, settings)}
                 </span>
               </td>
             </tr>
           ))}
 
-          {rows.length === 0 && (
+          {filtered.length === 0 && (
             <tr>
               <td colSpan="6">No records found.</td>
             </tr>
@@ -1108,7 +1298,9 @@ function WarehouseReportTable({ rows, warehouse }) {
   );
 }
 
-function MovementTable({ rows }) {
+function MovementTable({ rows, showActions = false, onDeleteRestore }) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+
   return (
     <div className="table">
       <table>
@@ -1120,11 +1312,12 @@ function MovementTable({ rows }) {
             <th>Qty</th>
             <th>From</th>
             <th>To / Used For</th>
+            {showActions && <th>Actions</th>}
           </tr>
         </thead>
 
         <tbody>
-          {rows.map((m) => (
+          {safeRows.map((m) => (
             <tr key={m.id}>
               <td>{m.date}</td>
               <td>{m.type}</td>
@@ -1132,12 +1325,19 @@ function MovementTable({ rows }) {
               <td>{m.qty}</td>
               <td>{m.from}</td>
               <td>{m.to}</td>
+              {showActions && (
+                <td>
+                  <button onClick={() => onDeleteRestore(m)}>
+                    Delete / Restore
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
 
-          {rows.length === 0 && (
+          {safeRows.length === 0 && (
             <tr>
-              <td colSpan="6">No records found.</td>
+              <td colSpan={showActions ? 7 : 6}>No records found.</td>
             </tr>
           )}
         </tbody>
@@ -1153,38 +1353,22 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
         <div className="form">
           <label>
             Company Name
-            <input
-              value={settings.company_name}
-              onChange={(e) => updateSetting('company_name', e.target.value)}
-              placeholder="Company name"
-            />
+            <input value={settings.company_name} onChange={(e) => updateSetting('company_name', e.target.value)} />
           </label>
 
           <label>
             Phone
-            <input
-              value={settings.company_phone}
-              onChange={(e) => updateSetting('company_phone', e.target.value)}
-              placeholder="Company phone"
-            />
+            <input value={settings.company_phone} onChange={(e) => updateSetting('company_phone', e.target.value)} />
           </label>
 
           <label>
             Email
-            <input
-              value={settings.company_email}
-              onChange={(e) => updateSetting('company_email', e.target.value)}
-              placeholder="Company email"
-            />
+            <input value={settings.company_email} onChange={(e) => updateSetting('company_email', e.target.value)} />
           </label>
 
           <label className="full">
             Address
-            <textarea
-              value={settings.company_address}
-              onChange={(e) => updateSetting('company_address', e.target.value)}
-              placeholder="Company address"
-            />
+            <textarea value={settings.company_address} onChange={(e) => updateSetting('company_address', e.target.value)} />
           </label>
         </div>
       </Panel>
@@ -1193,30 +1377,17 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
         <div className="form">
           <label>
             Warehouse 1 Name
-            <input
-              value={settings.warehouse1_name}
-              onChange={(e) => updateSetting('warehouse1_name', e.target.value)}
-              placeholder="Warehouse 1"
-            />
+            <input value={settings.warehouse1_name} onChange={(e) => updateSetting('warehouse1_name', e.target.value)} />
           </label>
 
           <label>
             Warehouse 2 Name
-            <input
-              value={settings.warehouse2_name}
-              onChange={(e) => updateSetting('warehouse2_name', e.target.value)}
-              placeholder="Warehouse 2"
-            />
+            <input value={settings.warehouse2_name} onChange={(e) => updateSetting('warehouse2_name', e.target.value)} />
           </label>
 
           <label>
             Low Stock Alert Level
-            <input
-              type="number"
-              min="0"
-              value={settings.low_stock_alert}
-              onChange={(e) => updateSetting('low_stock_alert', e.target.value)}
-            />
+            <input type="number" min="0" value={settings.low_stock_alert} onChange={(e) => updateSetting('low_stock_alert', e.target.value)} />
           </label>
         </div>
       </Panel>
@@ -1225,19 +1396,12 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
         <div className="form">
           <label>
             Report Title
-            <input
-              value={settings.report_title}
-              onChange={(e) => updateSetting('report_title', e.target.value)}
-              placeholder="Report title"
-            />
+            <input value={settings.report_title} onChange={(e) => updateSetting('report_title', e.target.value)} />
           </label>
 
           <label>
             PDF Layout
-            <select
-              value={settings.pdf_layout}
-              onChange={(e) => updateSetting('pdf_layout', e.target.value)}
-            >
+            <select value={settings.pdf_layout} onChange={(e) => updateSetting('pdf_layout', e.target.value)}>
               <option>Professional</option>
               <option>Simple</option>
             </select>
@@ -1245,10 +1409,7 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
 
           <label>
             Currency
-            <select
-              value={settings.currency}
-              onChange={(e) => updateSetting('currency', e.target.value)}
-            >
+            <select value={settings.currency} onChange={(e) => updateSetting('currency', e.target.value)}>
               <option>USD</option>
               <option>EUR</option>
               <option>DOP</option>
@@ -1257,11 +1418,7 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
 
           <label>
             Timezone
-            <input
-              value={settings.timezone}
-              onChange={(e) => updateSetting('timezone', e.target.value)}
-              placeholder="America/New_York"
-            />
+            <input value={settings.timezone} onChange={(e) => updateSetting('timezone', e.target.value)} />
           </label>
         </div>
       </Panel>
@@ -1277,7 +1434,7 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
   );
 }
 
-function MovementForm({ form, setForm, products, active }) {
+function MovementForm({ form, setForm, products, active, settings }) {
   return (
     <div className="form">
       <label>
@@ -1298,8 +1455,8 @@ function MovementForm({ form, setForm, products, active }) {
         <label>
           {active === 'Transfers' ? 'From Warehouse' : 'Warehouse'}
           <select value={form.warehouse} onChange={(e) => setForm({ ...form, warehouse: e.target.value })}>
-            <option>Warehouse 1</option>
-            <option>Warehouse 2</option>
+            <option value="Warehouse 1">{settings.warehouse1_name}</option>
+            <option value="Warehouse 2">{settings.warehouse2_name}</option>
           </select>
         </label>
       )}
@@ -1307,7 +1464,7 @@ function MovementForm({ form, setForm, products, active }) {
       {active === 'Daily Use' && (
         <label>
           Warehouse
-          <input disabled value="Warehouse 1" />
+          <input disabled value={settings.warehouse1_name} />
         </label>
       )}
 
@@ -1325,7 +1482,7 @@ function MovementForm({ form, setForm, products, active }) {
       {active === 'Transfers' && (
         <label>
           To Warehouse
-          <input disabled value={form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1'} />
+          <input disabled value={form.warehouse === 'Warehouse 1' ? settings.warehouse2_name : settings.warehouse1_name} />
         </label>
       )}
 
