@@ -16,10 +16,8 @@ const menu = [
   ['Daily Use', ClipboardList],
   ['Transfers', Repeat2],
   ['Reports', ClipboardList],
-  ['Suppliers', Truck],
-  ['Customers', Users],
-  ['Users', ShieldCheck],
-  ['Settings', Settings]
+  ['Settings', Settings],
+  ['Users', ShieldCheck]
 ];
 
 const reportOptions = [
@@ -46,9 +44,23 @@ function App() {
   const [active, setActive] = useState('Dashboard');
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
   const [query, setQuery] = useState('');
   const [reportType, setReportType] = useState('executive');
+  const [settings, setSettings] = useState({
+    id: null,
+    company_name: 'Camelot Inventory Management',
+    company_phone: '',
+    company_email: '',
+    company_address: '',
+    warehouse1_name: 'Warehouse 1',
+    warehouse2_name: 'Warehouse 2',
+    low_stock_alert: 10,
+    report_title: 'Camelot Inventory Management',
+    pdf_layout: 'Professional',
+    currency: 'USD',
+    language: 'English',
+    timezone: 'America/New_York'
+  });
   const [form, setForm] = useState({
     productId: '',
     qty: 1,
@@ -60,8 +72,114 @@ function App() {
   useEffect(() => {
     loadProducts();
     loadMovements();
-    loadSuppliers();
+    loadSettings();
   }, []);
+
+
+  async function loadSettings() {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('*')
+      .order('id', { ascending: true })
+      .limit(1);
+
+    if (error) {
+      console.log('Settings table error:', error.message);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      setSettings((prev) => ({
+        ...prev,
+        ...data[0]
+      }));
+    }
+  }
+
+  async function saveSettings() {
+    const payload = {
+      company_name: settings.company_name || 'Camelot Inventory Management',
+      company_phone: settings.company_phone || '',
+      company_email: settings.company_email || '',
+      company_address: settings.company_address || '',
+      warehouse1_name: settings.warehouse1_name || 'Warehouse 1',
+      warehouse2_name: settings.warehouse2_name || 'Warehouse 2',
+      low_stock_alert: Number(settings.low_stock_alert || 10),
+      report_title: settings.report_title || 'Camelot Inventory Management',
+      pdf_layout: settings.pdf_layout || 'Professional',
+      currency: settings.currency || 'USD',
+      language: settings.language || 'English',
+      timezone: settings.timezone || 'America/New_York'
+    };
+
+    if (settings.id) {
+      const { error } = await supabase
+        .from('settings')
+        .update(payload)
+        .eq('id', settings.id);
+
+      if (error) return alert(error.message);
+    } else {
+      const { data, error } = await supabase
+        .from('settings')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) return alert(error.message);
+      setSettings((prev) => ({ ...prev, ...data }));
+    }
+
+    alert('Settings saved.');
+    await loadSettings();
+  }
+
+  function updateSetting(field, value) {
+    setSettings((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  }
+
+  function exportBackup() {
+    const backup = {
+      generated_at: new Date().toISOString(),
+      settings,
+      products,
+      movements
+    };
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: 'application/json'
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'camelot-backup.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function resetSettingsDefaults() {
+    if (!confirm('Reset settings to defaults?')) return;
+
+    setSettings((prev) => ({
+      ...prev,
+      company_name: 'Camelot Inventory Management',
+      company_phone: '',
+      company_email: '',
+      company_address: '',
+      warehouse1_name: 'Warehouse 1',
+      warehouse2_name: 'Warehouse 2',
+      low_stock_alert: 10,
+      report_title: 'Camelot Inventory Management',
+      pdf_layout: 'Professional',
+      currency: 'USD',
+      language: 'English',
+      timezone: 'America/New_York'
+    }));
+  }
 
   async function loadProducts() {
     const { data, error } = await supabase
@@ -118,93 +236,6 @@ function App() {
     }));
 
     setMovements(formatted);
-  }
-
-
-  async function loadSuppliers() {
-    const { data, error } = await supabase
-      .from('suppliers')
-      .select('*')
-      .order('id', { ascending: true });
-
-    if (error) {
-      console.log('Suppliers table error:', error.message);
-      return;
-    }
-
-    setSuppliers(data || []);
-  }
-
-  async function addSupplier() {
-    const name = prompt('Supplier Name');
-    if (!name) return;
-
-    const contact = prompt('Contact Person', '') || '';
-    const phone = prompt('Phone', '') || '';
-    const email = prompt('Email', '') || '';
-    const city = prompt('City', '') || '';
-    const state = prompt('State', '') || '';
-    const address = prompt('Address', '') || '';
-    const notes = prompt('Notes', '') || '';
-
-    const { error } = await supabase.from('suppliers').insert({
-      name,
-      contact,
-      phone,
-      email,
-      city,
-      state,
-      address,
-      notes,
-      status: 'Active'
-    });
-
-    if (error) return alert(error.message);
-    await loadSuppliers();
-  }
-
-  async function editSupplier(supplier) {
-    const name = prompt('Supplier Name', supplier.name || '');
-    if (!name) return;
-
-    const contact = prompt('Contact Person', supplier.contact || '') || '';
-    const phone = prompt('Phone', supplier.phone || '') || '';
-    const email = prompt('Email', supplier.email || '') || '';
-    const city = prompt('City', supplier.city || '') || '';
-    const state = prompt('State', supplier.state || '') || '';
-    const address = prompt('Address', supplier.address || '') || '';
-    const notes = prompt('Notes', supplier.notes || '') || '';
-    const status = prompt('Status', supplier.status || 'Active') || 'Active';
-
-    const { error } = await supabase
-      .from('suppliers')
-      .update({
-        name,
-        contact,
-        phone,
-        email,
-        city,
-        state,
-        address,
-        notes,
-        status
-      })
-      .eq('id', supplier.id);
-
-    if (error) return alert(error.message);
-    await loadSuppliers();
-  }
-
-  async function deleteSupplier(id) {
-    if (!confirm('Delete this supplier?')) return;
-
-    const { error } = await supabase
-      .from('suppliers')
-      .delete()
-      .eq('id', id);
-
-    if (error) return alert(error.message);
-    await loadSuppliers();
   }
 
   async function addProduct() {
@@ -436,7 +467,7 @@ function App() {
     const html = `
       <div style="font-family: Arial, sans-serif; padding: 32px; color: #111827; width: 794px; background: #ffffff;">
         <div style="border-bottom: 2px solid #111827; padding-bottom: 16px; margin-bottom: 24px;">
-          <h1 style="font-size: 24px; margin: 0;">CAMELOT INVENTORY MANAGEMENT</h1>
+          <h1 style="font-size: 24px; margin: 0;">${settings.report_title || settings.company_name || 'CAMELOT INVENTORY MANAGEMENT'}</h1>
           <p style="margin: 4px 0;">${title}</p>
           <p style="margin: 4px 0;">Generated: ${todayText()}</p>
         </div>
@@ -541,7 +572,7 @@ function App() {
         </head>
         <body>
           <div class="header">
-            <h1>CAMELOT INVENTORY MANAGEMENT</h1>
+            <h1>${settings.report_title || settings.company_name || 'CAMELOT INVENTORY MANAGEMENT'}</h1>
             <p>${title}</p>
             <p>Generated: ${todayText()}</p>
           </div>
@@ -598,12 +629,11 @@ function App() {
             <h1>{active}</h1>
           </div>
 
-          <button
-            className="primary"
-            onClick={active === 'Suppliers' ? addSupplier : addProduct}
-          >
-            {active === 'Suppliers' ? '+ Add Supplier' : '+ Add Product'}
-          </button>
+          {!['Settings', 'Users'].includes(active) && (
+            <button className="primary" onClick={addProduct}>
+              + Add Product
+            </button>
+          )}
         </header>
 
         {active === 'Dashboard' && (
@@ -687,23 +717,25 @@ function App() {
           </Panel>
         )}
 
-        {active === 'Suppliers' && (
-          <Panel title="Suppliers">
-            <button className="primary" onClick={addSupplier}>+ Add Supplier</button>
-            <SupplierTable
-              rows={suppliers}
-              editSupplier={editSupplier}
-              deleteSupplier={deleteSupplier}
+        {active === 'Settings' && (
+          <Panel title="Settings">
+            <SettingsForm
+              settings={settings}
+              updateSetting={updateSetting}
+              saveSettings={saveSettings}
+              resetSettingsDefaults={resetSettingsDefaults}
+              exportBackup={exportBackup}
             />
           </Panel>
         )}
 
-        {['Customers', 'Users', 'Settings'].includes(active) && (
-          <Panel title={active}>
+        {active === 'Users' && (
+          <Panel title="Users">
             <div className="empty">
-              <Building2 size={44} />
-              <h2>{active} module</h2>
-              <p>This screen is ready for Supabase data integration, roles, permissions and online records.</p>
+              <ShieldCheck size={44} />
+              <h2>Users & Permissions</h2>
+              <p>This module is ready for Administrator, Manager and Viewer roles.</p>
+              <p>Recommended roles: Administrator, Manager, Warehouse Clerk and Viewer.</p>
             </div>
           </Panel>
         )}
@@ -1114,53 +1146,133 @@ function MovementTable({ rows }) {
   );
 }
 
-function SupplierTable({ rows, editSupplier, deleteSupplier }) {
-  const safeRows = Array.isArray(rows) ? rows : [];
-
+function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefaults, exportBackup }) {
   return (
-    <div className="table">
-      <table>
-        <thead>
-          <tr>
-            <th>Supplier</th>
-            <th>Contact</th>
-            <th>Phone</th>
-            <th>Email</th>
-            <th>City</th>
-            <th>State</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
+    <div>
+      <Panel title="Company Information">
+        <div className="form">
+          <label>
+            Company Name
+            <input
+              value={settings.company_name}
+              onChange={(e) => updateSetting('company_name', e.target.value)}
+              placeholder="Company name"
+            />
+          </label>
 
-        <tbody>
-          {safeRows.map((supplier) => (
-            <tr key={supplier.id}>
-              <td>{supplier.name}</td>
-              <td>{supplier.contact}</td>
-              <td>{supplier.phone}</td>
-              <td>{supplier.email}</td>
-              <td>{supplier.city}</td>
-              <td>{supplier.state}</td>
-              <td>
-                <span className={supplier.status === 'Inactive' ? 'badge low' : 'badge'}>
-                  {supplier.status || 'Active'}
-                </span>
-              </td>
-              <td>
-                <button onClick={() => editSupplier(supplier)}>Edit</button>
-                <button onClick={() => deleteSupplier(supplier.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
+          <label>
+            Phone
+            <input
+              value={settings.company_phone}
+              onChange={(e) => updateSetting('company_phone', e.target.value)}
+              placeholder="Company phone"
+            />
+          </label>
 
-          {safeRows.length === 0 && (
-            <tr>
-              <td colSpan="8">No suppliers found.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+          <label>
+            Email
+            <input
+              value={settings.company_email}
+              onChange={(e) => updateSetting('company_email', e.target.value)}
+              placeholder="Company email"
+            />
+          </label>
+
+          <label className="full">
+            Address
+            <textarea
+              value={settings.company_address}
+              onChange={(e) => updateSetting('company_address', e.target.value)}
+              placeholder="Company address"
+            />
+          </label>
+        </div>
+      </Panel>
+
+      <Panel title="Warehouse Settings">
+        <div className="form">
+          <label>
+            Warehouse 1 Name
+            <input
+              value={settings.warehouse1_name}
+              onChange={(e) => updateSetting('warehouse1_name', e.target.value)}
+              placeholder="Warehouse 1"
+            />
+          </label>
+
+          <label>
+            Warehouse 2 Name
+            <input
+              value={settings.warehouse2_name}
+              onChange={(e) => updateSetting('warehouse2_name', e.target.value)}
+              placeholder="Warehouse 2"
+            />
+          </label>
+
+          <label>
+            Low Stock Alert Level
+            <input
+              type="number"
+              min="0"
+              value={settings.low_stock_alert}
+              onChange={(e) => updateSetting('low_stock_alert', e.target.value)}
+            />
+          </label>
+        </div>
+      </Panel>
+
+      <Panel title="Report Settings">
+        <div className="form">
+          <label>
+            Report Title
+            <input
+              value={settings.report_title}
+              onChange={(e) => updateSetting('report_title', e.target.value)}
+              placeholder="Report title"
+            />
+          </label>
+
+          <label>
+            PDF Layout
+            <select
+              value={settings.pdf_layout}
+              onChange={(e) => updateSetting('pdf_layout', e.target.value)}
+            >
+              <option>Professional</option>
+              <option>Simple</option>
+            </select>
+          </label>
+
+          <label>
+            Currency
+            <select
+              value={settings.currency}
+              onChange={(e) => updateSetting('currency', e.target.value)}
+            >
+              <option>USD</option>
+              <option>EUR</option>
+              <option>DOP</option>
+            </select>
+          </label>
+
+          <label>
+            Timezone
+            <input
+              value={settings.timezone}
+              onChange={(e) => updateSetting('timezone', e.target.value)}
+              placeholder="America/New_York"
+            />
+          </label>
+        </div>
+      </Panel>
+
+      <Panel title="Backup">
+        <div className="report-actions">
+          <button className="primary" onClick={saveSettings}>Save Settings</button>
+          <button onClick={resetSettingsDefaults}>Reset Defaults</button>
+          <button onClick={exportBackup}>Export Backup</button>
+        </div>
+      </Panel>
     </div>
   );
 }
