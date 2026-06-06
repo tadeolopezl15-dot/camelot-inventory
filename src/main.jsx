@@ -918,9 +918,7 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false })
         </thead>
 
         <tbody>
-          {rows
-  .filter((p) => Number(p[key] || 0) > 0)
-  .map((p) => (
+          {rows.map((p) => (
             <tr key={p.id}>
               <td>{p.code}</td>
               <td>{p.name}</td>
