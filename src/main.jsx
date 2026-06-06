@@ -341,93 +341,252 @@ function App() {
     XLSX.writeFile(wb, `camelot-${reportType}-report.xlsx`);
   }
 
-  async function exportPDF() {
-    const title = getReportTitle(reportType);
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; padding: 32px; color: #111827; width: 794px; background: #ffffff;">
-        <div style="border-bottom: 2px solid #111827; padding-bottom: 16px; margin-bottom: 24px;">
-          <h1 style="font-size: 24px; margin: 0;">CAMELOT INVENTORY MANAGEMENT</h1>
-          <p style="margin: 4px 0;">${title}</p>
-          <p style="margin: 4px 0;">Generated: ${todayText()}</p>
-        </div>
-
-        <style>
-          h2 {
-            font-size: 18px;
-            margin-top: 28px;
-            border-bottom: 1px solid #d1d5db;
-            padding-bottom: 8px;
-          }
-
-          .summary {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 12px;
-            margin-bottom: 24px;
-          }
-
-          .card {
-            border: 1px solid #d1d5db;
-            padding: 12px;
-            border-radius: 8px;
-          }
-
-          .card strong {
-            display: block;
-            font-size: 20px;
-            margin-top: 6px;
-          }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 12px;
-            font-size: 12px;
-          }
-
-          th, td {
-            border: 1px solid #d1d5db;
-            padding: 7px;
-            text-align: left;
-          }
-
-          th {
-            background: #f3f4f6;
-          }
-        </style>
-
-        ${getPrintableReportHtml(reportType, products, selectedRows, totals)}
-      </div>
-    `;
-
-    const container = document.createElement('div');
-    container.innerHTML = html;
-    container.style.position = 'fixed';
-    container.style.left = '-9999px';
-    container.style.top = '0';
-    container.style.width = '794px';
-    container.style.background = '#ffffff';
-
-    document.body.appendChild(container);
-
+  function exportPDF() {
     const doc = new jsPDF('p', 'mm', 'a4');
+    const title = getReportTitle(reportType);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    let y = 16;
 
-    await doc.html(container, {
-      x: 0,
-      y: 0,
-      width: 210,
-      windowWidth: 794,
-      autoPaging: 'text',
-      html2canvas: {
-        scale: 1.5,
-        useCORS: true
-      },
-      callback: function (pdf) {
-        pdf.save(`camelot-${reportType}-report.pdf`);
-        document.body.removeChild(container);
+    function addHeader() {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('CAMELOT INVENTORY MANAGEMENT', margin, y);
+      y += 8;
+
+      doc.setFontSize(12);
+      doc.text(title.toUpperCase(), margin, y);
+      y += 7;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Generated: ${todayText()}`, margin, y);
+      y += 8;
+
+      doc.setDrawColor(31, 41, 55);
+      doc.setLineWidth(0.5);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 8;
+    }
+
+    function checkPage(extraHeight = 12) {
+      if (y + extraHeight > pageHeight - 16) {
+        doc.addPage();
+        y = 16;
+        addHeader();
       }
-    });
+    }
+
+    function drawSectionTitle(sectionTitle) {
+      checkPage(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(sectionTitle, margin, y);
+      y += 5;
+      doc.setDrawColor(209, 213, 219);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 6;
+    }
+
+    function drawSummaryCards() {
+      const cards = [
+        ['Total Products', totals.products],
+        ['Warehouse 1', totals.w1],
+        ['Warehouse 2', totals.w2],
+        ['Total Inventory', totals.all],
+        ['Low Stock', totals.low]
+      ];
+
+      const gap = 3;
+      const cardWidth = (pageWidth - margin * 2 - gap * 4) / 5;
+      const cardHeight = 18;
+      let x = margin;
+
+      checkPage(cardHeight + 8);
+
+      cards.forEach(([label, value]) => {
+        doc.setDrawColor(209, 213, 219);
+        doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.text(String(label), x + 2, y + 6);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text(String(value), x + 2, y + 14);
+        x += cardWidth + gap;
+      });
+
+      y += cardHeight + 10;
+    }
+
+    function drawTable(columns, rows, sectionTitle) {
+      drawSectionTitle(sectionTitle);
+
+      const usableWidth = pageWidth - margin * 2;
+      const totalUnits = columns.reduce((sum, col) => sum + col.width, 0);
+      const widths = columns.map((col) => (col.width / totalUnits) * usableWidth);
+      const rowHeight = 8;
+
+      function drawTableHeader() {
+        let x = margin;
+        doc.setFillColor(243, 244, 246);
+        doc.setDrawColor(209, 213, 219);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+
+        columns.forEach((col, i) => {
+          doc.rect(x, y, widths[i], rowHeight, 'FD');
+          doc.text(col.label, x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
+          x += widths[i];
+        });
+
+        y += rowHeight;
+      }
+
+      drawTableHeader();
+
+      if (!rows || rows.length === 0) {
+        checkPage(rowHeight);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.rect(margin, y, usableWidth, rowHeight);
+        doc.text('No records found.', margin + 2, y + 5.3);
+        y += rowHeight + 4;
+        return;
+      }
+
+      rows.forEach((row) => {
+        checkPage(rowHeight + 2);
+
+        if (y + rowHeight > pageHeight - 16) {
+          doc.addPage();
+          y = 16;
+          addHeader();
+          drawTableHeader();
+        }
+
+        let x = margin;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setDrawColor(209, 213, 219);
+
+        columns.forEach((col, i) => {
+          const value = row[col.key] === undefined || row[col.key] === null ? '' : String(row[col.key]);
+          doc.rect(x, y, widths[i], rowHeight);
+          doc.text(value, x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
+          x += widths[i];
+        });
+
+        y += rowHeight;
+      });
+
+      y += 6;
+    }
+
+    function productStatus(p) {
+      return Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK';
+    }
+
+    function warehouseStatus(p, key) {
+      return Number(p[key] || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK';
+    }
+
+    function inventoryRows(rows) {
+      return rows.map((p) => ({
+        code: p.code,
+        product: p.name,
+        category: p.category,
+        unit: p.unit,
+        w1: Number(p.w1 || 0),
+        w2: Number(p.w2 || 0),
+        total: Number(p.w1 || 0) + Number(p.w2 || 0),
+        status: productStatus(p)
+      }));
+    }
+
+    function warehouseRows(rows, warehouse) {
+      const key = warehouse === 'Warehouse 1' ? 'w1' : 'w2';
+      return rows
+        .filter((p) => Number(p[key] || 0) > 0)
+        .map((p) => ({
+          code: p.code,
+          product: p.name,
+          category: p.category,
+          unit: p.unit,
+          quantity: Number(p[key] || 0),
+          status: warehouseStatus(p, key)
+        }));
+    }
+
+    function movementRows(rows) {
+      return rows.map((m) => ({
+        date: m.date,
+        type: m.type,
+        product: m.product,
+        qty: m.qty,
+        from: m.from,
+        to: m.to
+      }));
+    }
+
+    const inventoryColumns = [
+      { label: 'Code', key: 'code', width: 12 },
+      { label: 'Product', key: 'product', width: 32 },
+      { label: 'Category', key: 'category', width: 18 },
+      { label: 'Unit', key: 'unit', width: 14 },
+      { label: 'WH 1', key: 'w1', width: 12 },
+      { label: 'WH 2', key: 'w2', width: 12 },
+      { label: 'Total', key: 'total', width: 12 },
+      { label: 'Status', key: 'status', width: 18 }
+    ];
+
+    const warehouseColumns = [
+      { label: 'Code', key: 'code', width: 14 },
+      { label: 'Product', key: 'product', width: 38 },
+      { label: 'Category', key: 'category', width: 22 },
+      { label: 'Unit', key: 'unit', width: 16 },
+      { label: 'Stock', key: 'quantity', width: 14 },
+      { label: 'Status', key: 'status', width: 18 }
+    ];
+
+    const movementColumns = [
+      { label: 'Date', key: 'date', width: 18 },
+      { label: 'Type', key: 'type', width: 18 },
+      { label: 'Product', key: 'product', width: 34 },
+      { label: 'Qty', key: 'qty', width: 10 },
+      { label: 'From', key: 'from', width: 24 },
+      { label: 'To / Used For', key: 'to', width: 28 }
+    ];
+
+    addHeader();
+
+    if (reportType === 'executive') {
+      drawSummaryCards();
+      drawTable(inventoryColumns, inventoryRows(products), 'Inventory Status');
+    } else if (reportType === 'inventory') {
+      drawTable(inventoryColumns, inventoryRows(products), 'Inventory Report');
+    } else if (reportType === 'warehouse1') {
+      drawTable(warehouseColumns, warehouseRows(products, 'Warehouse 1'), 'Warehouse 1 Report');
+    } else if (reportType === 'warehouse2') {
+      drawTable(warehouseColumns, warehouseRows(products, 'Warehouse 2'), 'Warehouse 2 Report');
+    } else if (reportType === 'lowstock') {
+      drawTable(inventoryColumns, inventoryRows(lowStock), 'Low Stock Report');
+    } else if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) {
+      drawTable(movementColumns, movementRows(selectedRows), title);
+    } else {
+      drawTable(inventoryColumns, inventoryRows(selectedRows), title);
+    }
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i += 1) {
+      doc.setPage(i);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 24, pageHeight - 8);
+    }
+
+    doc.save(`camelot-${reportType}-report.pdf`);
   }
 
   function printReport() {
