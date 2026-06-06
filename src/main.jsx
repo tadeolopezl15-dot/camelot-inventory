@@ -341,117 +341,93 @@ function App() {
     XLSX.writeFile(wb, `camelot-${reportType}-report.xlsx`);
   }
 
-  function exportPDF() {
-    const doc = new jsPDF();
-    let y = 18;
+  async function exportPDF() {
+    const title = getReportTitle(reportType);
 
-    doc.setFontSize(16);
-    doc.text('CAMELOT INVENTORY MANAGEMENT', 14, y);
-    y += 8;
+    const html = `
+      <div style="font-family: Arial, sans-serif; padding: 32px; color: #111827; width: 794px; background: #ffffff;">
+        <div style="border-bottom: 2px solid #111827; padding-bottom: 16px; margin-bottom: 24px;">
+          <h1 style="font-size: 24px; margin: 0;">CAMELOT INVENTORY MANAGEMENT</h1>
+          <p style="margin: 4px 0;">${title}</p>
+          <p style="margin: 4px 0;">Generated: ${todayText()}</p>
+        </div>
 
-    doc.setFontSize(12);
-    doc.text(getReportTitle(reportType).toUpperCase(), 14, y);
-    y += 8;
+        <style>
+          h2 {
+            font-size: 18px;
+            margin-top: 28px;
+            border-bottom: 1px solid #d1d5db;
+            padding-bottom: 8px;
+          }
 
-    doc.setFontSize(9);
-    doc.text(`Generated: ${todayText()}`, 14, y);
-    y += 12;
+          .summary {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+          }
 
-    if (reportType === 'executive') {
-      doc.setFontSize(11);
-      doc.text('SUMMARY', 14, y);
-      y += 8;
+          .card {
+            border: 1px solid #d1d5db;
+            padding: 12px;
+            border-radius: 8px;
+          }
 
-      doc.setFontSize(9);
-      [
-        `Total Products: ${totals.products}`,
-        `Warehouse 1 Stock: ${totals.w1}`,
-        `Warehouse 2 Stock: ${totals.w2}`,
-        `Total Inventory: ${totals.all}`,
-        `Low Stock Items: ${totals.low}`
-      ].forEach((line) => {
-        doc.text(line, 14, y);
-        y += 6;
-      });
+          .card strong {
+            display: block;
+            font-size: 20px;
+            margin-top: 6px;
+          }
 
-      y += 8;
-      doc.setFontSize(11);
-      doc.text('INVENTORY STATUS', 14, y);
-      y += 8;
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 12px;
+          }
 
-      doc.setFontSize(8);
-      products.forEach((p) => {
-        if (y > 280) {
-          doc.addPage();
-          y = 18;
-        }
+          th, td {
+            border: 1px solid #d1d5db;
+            padding: 7px;
+            text-align: left;
+          }
 
-        doc.text(`${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`, 14, y);
-        y += 6;
-      });
+          th {
+            background: #f3f4f6;
+          }
+        </style>
 
-      doc.save('camelot-executive-report.pdf');
-      return;
-    }
+        ${getPrintableReportHtml(reportType, products, selectedRows, totals)}
+      </div>
+    `;
 
-    doc.setFontSize(8);
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '794px';
+    container.style.background = '#ffffff';
 
-    if (reportType === 'warehouse1') {
-      products.filter((p) => Number(p.w1 || 0) > 0).forEach((p) => {
-        if (y > 280) {
-          doc.addPage();
-          y = 18;
-        }
-        const status = Number(p.w1 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK';
-        doc.text(`${p.code} | ${p.name} | ${p.category} | ${p.unit} | Warehouse 1: ${p.w1} | ${status}`, 14, y);
-        y += 6;
-      });
+    document.body.appendChild(container);
 
-      doc.save('camelot-warehouse-1-report.pdf');
-      return;
-    }
+    const doc = new jsPDF('p', 'mm', 'a4');
 
-    if (reportType === 'warehouse2') {
-      products.filter((p) => Number(p.w2 || 0) > 0).forEach((p) => {
-        if (y > 280) {
-          doc.addPage();
-          y = 18;
-        }
-        const status = Number(p.w2 || 0) <= Number(p.min || 0) ? 'Low Stock' : 'OK';
-        doc.text(`${p.code} | ${p.name} | ${p.category} | ${p.unit} | Warehouse 2: ${p.w2} | ${status}`, 14, y);
-        y += 6;
-      });
-
-      doc.save('camelot-warehouse-2-report.pdf');
-      return;
-    }
-
-    if (['dailyuse', 'stockin', 'stockout', 'transfers'].includes(reportType)) {
-      selectedRows.forEach((m) => {
-        if (y > 280) {
-          doc.addPage();
-          y = 18;
-        }
-
-        doc.text(`${m.date} | ${m.type} | ${m.product} | Qty: ${m.qty} | From: ${m.from} | To: ${m.to}`, 14, y);
-        y += 6;
-      });
-
-      doc.save(`camelot-${reportType}-report.pdf`);
-      return;
-    }
-
-    selectedRows.forEach((p) => {
-      if (y > 280) {
-        doc.addPage();
-        y = 18;
+    await doc.html(container, {
+      x: 0,
+      y: 0,
+      width: 210,
+      windowWidth: 794,
+      autoPaging: 'text',
+      html2canvas: {
+        scale: 0.25,
+        useCORS: true
+      },
+      callback: function (pdf) {
+        pdf.save(`camelot-${reportType}-report.pdf`);
+        document.body.removeChild(container);
       }
-
-      doc.text(`${p.code} | ${p.name} | W1: ${p.w1} | W2: ${p.w2} | Total: ${Number(p.w1 || 0) + Number(p.w2 || 0)}`, 14, y);
-      y += 6;
     });
-
-    doc.save(`camelot-${reportType}-report.pdf`);
   }
 
   function printReport() {
