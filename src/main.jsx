@@ -46,6 +46,7 @@ function App() {
   const [active, setActive] = useState('Dashboard');
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [query, setQuery] = useState('');
   const [reportType, setReportType] = useState('executive');
   const [form, setForm] = useState({
@@ -59,6 +60,7 @@ function App() {
   useEffect(() => {
     loadProducts();
     loadMovements();
+    loadSuppliers();
   }, []);
 
   async function loadProducts() {
@@ -106,7 +108,6 @@ function App() {
 
     const formatted = (data || []).map((m) => ({
       id: m.id,
-      productId: m.product_id,
       date: m.date,
       type: m.type,
       product: m.product,
@@ -117,6 +118,93 @@ function App() {
     }));
 
     setMovements(formatted);
+  }
+
+
+  async function loadSuppliers() {
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error) {
+      console.log('Suppliers table error:', error.message);
+      return;
+    }
+
+    setSuppliers(data || []);
+  }
+
+  async function addSupplier() {
+    const name = prompt('Supplier Name');
+    if (!name) return;
+
+    const contact = prompt('Contact Person', '') || '';
+    const phone = prompt('Phone', '') || '';
+    const email = prompt('Email', '') || '';
+    const city = prompt('City', '') || '';
+    const state = prompt('State', '') || '';
+    const address = prompt('Address', '') || '';
+    const notes = prompt('Notes', '') || '';
+
+    const { error } = await supabase.from('suppliers').insert({
+      name,
+      contact,
+      phone,
+      email,
+      city,
+      state,
+      address,
+      notes,
+      status: 'Active'
+    });
+
+    if (error) return alert(error.message);
+    await loadSuppliers();
+  }
+
+  async function editSupplier(supplier) {
+    const name = prompt('Supplier Name', supplier.name || '');
+    if (!name) return;
+
+    const contact = prompt('Contact Person', supplier.contact || '') || '';
+    const phone = prompt('Phone', supplier.phone || '') || '';
+    const email = prompt('Email', supplier.email || '') || '';
+    const city = prompt('City', supplier.city || '') || '';
+    const state = prompt('State', supplier.state || '') || '';
+    const address = prompt('Address', supplier.address || '') || '';
+    const notes = prompt('Notes', supplier.notes || '') || '';
+    const status = prompt('Status', supplier.status || 'Active') || 'Active';
+
+    const { error } = await supabase
+      .from('suppliers')
+      .update({
+        name,
+        contact,
+        phone,
+        email,
+        city,
+        state,
+        address,
+        notes,
+        status
+      })
+      .eq('id', supplier.id);
+
+    if (error) return alert(error.message);
+    await loadSuppliers();
+  }
+
+  async function deleteSupplier(id) {
+    if (!confirm('Delete this supplier?')) return;
+
+    const { error } = await supabase
+      .from('suppliers')
+      .delete()
+      .eq('id', id);
+
+    if (error) return alert(error.message);
+    await loadSuppliers();
   }
 
   async function addProduct() {
@@ -281,91 +369,6 @@ function App() {
 
     await loadProducts();
     await loadMovements();
-  }
-
-
-  async function deleteRestoreMovement(movement) {
-    if (!movement) return;
-
-    const ok = confirm('Delete this movement and restore inventory?');
-    if (!ok) return;
-
-    const product = products.find((p) => {
-      if (movement.productId && p.id === Number(movement.productId)) return true;
-      return String(p.name || '').toLowerCase() === String(movement.product || '').toLowerCase();
-    });
-
-    if (!product) {
-      alert('Product not found. Inventory cannot be restored.');
-      return;
-    }
-
-    const qty = Number(movement.qty || 0);
-    if (qty <= 0) {
-      alert('Invalid quantity.');
-      return;
-    }
-
-    let nextW1 = Number(product.w1 || 0);
-    let nextW2 = Number(product.w2 || 0);
-
-    if (movement.type === 'Daily Use') {
-      nextW1 += qty;
-    }
-
-    if (movement.type === 'Stock Out') {
-      if (movement.from === 'Warehouse 2') {
-        nextW2 += qty;
-      } else {
-        nextW1 += qty;
-      }
-    }
-
-    if (movement.type === 'Stock In') {
-      if (movement.to === 'Warehouse 2') {
-        nextW2 = Math.max(0, nextW2 - qty);
-      } else {
-        nextW1 = Math.max(0, nextW1 - qty);
-      }
-    }
-
-    if (movement.type === 'Transfer') {
-      if (movement.from === 'Warehouse 1' && movement.to === 'Warehouse 2') {
-        nextW1 += qty;
-        nextW2 = Math.max(0, nextW2 - qty);
-      } else if (movement.from === 'Warehouse 2' && movement.to === 'Warehouse 1') {
-        nextW2 += qty;
-        nextW1 = Math.max(0, nextW1 - qty);
-      }
-    }
-
-    const { error: updateError } = await supabase
-      .from('products')
-      .update({
-        w1: nextW1,
-        w2: nextW2
-      })
-      .eq('id', product.id);
-
-    if (updateError) {
-      alert(updateError.message);
-      return;
-    }
-
-    const { error: deleteError } = await supabase
-      .from('inventory_movements')
-      .delete()
-      .eq('id', movement.id);
-
-    if (deleteError) {
-      alert(deleteError.message);
-      return;
-    }
-
-    await loadProducts();
-    await loadMovements();
-
-    alert('Movement deleted and inventory restored.');
   }
 
   const lowStock = products.filter((p) => Number(p.w1 || 0) + Number(p.w2 || 0) <= Number(p.min || 0));
@@ -595,8 +598,11 @@ function App() {
             <h1>{active}</h1>
           </div>
 
-          <button className="primary" onClick={addProduct}>
-            + Add Product
+          <button
+            className="primary"
+            onClick={active === 'Suppliers' ? addSupplier : addProduct}
+          >
+            {active === 'Suppliers' ? '+ Add Supplier' : '+ Add Product'}
           </button>
         </header>
 
@@ -677,12 +683,22 @@ function App() {
               stockIn={stockIn}
               stockOut={stockOut}
               transfers={transfers}
-              deleteRestoreMovement={deleteRestoreMovement}
             />
           </Panel>
         )}
 
-        {['Suppliers', 'Customers', 'Users', 'Settings'].includes(active) && (
+        {active === 'Suppliers' && (
+          <Panel title="Suppliers">
+            <button className="primary" onClick={addSupplier}>+ Add Supplier</button>
+            <SupplierTable
+              rows={suppliers}
+              editSupplier={editSupplier}
+              deleteSupplier={deleteSupplier}
+            />
+          </Panel>
+        )}
+
+        {['Customers', 'Users', 'Settings'].includes(active) && (
           <Panel title={active}>
             <div className="empty">
               <Building2 size={44} />
@@ -830,7 +846,7 @@ function movementTableHtml(rows) {
   `;
 }
 
-function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers, deleteRestoreMovement }) {
+function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers }) {
   if (reportType === 'executive') {
     return (
       <>
@@ -894,7 +910,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'dailyuse') {
     return (
       <Panel title="Daily Use Report">
-        <MovementTable rows={dailyUse} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={dailyUse} />
       </Panel>
     );
   }
@@ -902,7 +918,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockin') {
     return (
       <Panel title="Stock In Report">
-        <MovementTable rows={stockIn} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={stockIn} />
       </Panel>
     );
   }
@@ -910,7 +926,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockout') {
     return (
       <Panel title="Stock Out Report">
-        <MovementTable rows={stockOut} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={stockOut} />
       </Panel>
     );
   }
@@ -918,7 +934,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'transfers') {
     return (
       <Panel title="Transfers Report">
-        <MovementTable rows={transfers} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={transfers} />
       </Panel>
     );
   }
@@ -1060,9 +1076,7 @@ function WarehouseReportTable({ rows, warehouse }) {
   );
 }
 
-function MovementTable({ rows, showActions = false, onDeleteRestore }) {
-  const safeRows = Array.isArray(rows) ? rows : [];
-
+function MovementTable({ rows }) {
   return (
     <div className="table">
       <table>
@@ -1074,12 +1088,11 @@ function MovementTable({ rows, showActions = false, onDeleteRestore }) {
             <th>Qty</th>
             <th>From</th>
             <th>To / Used For</th>
-            {showActions && <th>Actions</th>}
           </tr>
         </thead>
 
         <tbody>
-          {safeRows.map((m) => (
+          {rows.map((m) => (
             <tr key={m.id}>
               <td>{m.date}</td>
               <td>{m.type}</td>
@@ -1087,19 +1100,63 @@ function MovementTable({ rows, showActions = false, onDeleteRestore }) {
               <td>{m.qty}</td>
               <td>{m.from}</td>
               <td>{m.to}</td>
-              {showActions && (
-                <td>
-                  <button onClick={() => onDeleteRestore(m)}>
-                    Delete / Restore
-                  </button>
-                </td>
-              )}
+            </tr>
+          ))}
+
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan="6">No records found.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SupplierTable({ rows, editSupplier, deleteSupplier }) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  return (
+    <div className="table">
+      <table>
+        <thead>
+          <tr>
+            <th>Supplier</th>
+            <th>Contact</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>City</th>
+            <th>State</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {safeRows.map((supplier) => (
+            <tr key={supplier.id}>
+              <td>{supplier.name}</td>
+              <td>{supplier.contact}</td>
+              <td>{supplier.phone}</td>
+              <td>{supplier.email}</td>
+              <td>{supplier.city}</td>
+              <td>{supplier.state}</td>
+              <td>
+                <span className={supplier.status === 'Inactive' ? 'badge low' : 'badge'}>
+                  {supplier.status || 'Active'}
+                </span>
+              </td>
+              <td>
+                <button onClick={() => editSupplier(supplier)}>Edit</button>
+                <button onClick={() => deleteSupplier(supplier.id)}>Delete</button>
+              </td>
             </tr>
           ))}
 
           {safeRows.length === 0 && (
             <tr>
-              <td colSpan={showActions ? 7 : 6}>No records found.</td>
+              <td colSpan="8">No suppliers found.</td>
             </tr>
           )}
         </tbody>
