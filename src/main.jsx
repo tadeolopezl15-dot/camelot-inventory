@@ -22,7 +22,7 @@ import * as XLSX from 'xlsx';
 import './styles.css';
 import { supabase } from './supabase';
 
-const menu = [
+const adminMenu = [
   ['Dashboard', LayoutDashboard],
   ['Products', Boxes],
   ['Inventory', Warehouse],
@@ -32,6 +32,12 @@ const menu = [
   ['Transfers', Repeat2],
   ['Reports', ClipboardList],
   ['Settings', Settings]
+];
+
+const viewerMenu = [
+  ['Dashboard', LayoutDashboard],
+  ['Inventory', Warehouse],
+  ['Reports', ClipboardList]
 ];
 
 const reportOptions = [
@@ -76,6 +82,11 @@ function getReportTitle(reportType) {
 
 function App() {
   const [active, setActive] = useState('Dashboard');
+  const [user, setUser] = useState(null);
+  const [role, setRole] = useState('viewer');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
   const [query, setQuery] = useState('');
@@ -90,10 +101,87 @@ function App() {
   });
 
   useEffect(() => {
-    loadProducts();
-    loadMovements();
-    loadSettings();
+    initAuth();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user || null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        await loadRole(currentUser.id);
+        await loadProducts();
+        await loadMovements();
+        await loadSettings();
+      } else {
+        setRole('viewer');
+      }
+
+      setAuthLoading(false);
+    });
+
+    return () => {
+      listener?.subscription?.unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (role !== 'admin' && !['Dashboard', 'Inventory', 'Reports'].includes(active)) {
+      setActive('Inventory');
+    }
+  }, [role, active]);
+
+
+  async function initAuth() {
+    const { data } = await supabase.auth.getSession();
+    const currentUser = data?.session?.user || null;
+
+    setUser(currentUser);
+
+    if (currentUser) {
+      await loadRole(currentUser.id);
+      await loadProducts();
+      await loadMovements();
+      await loadSettings();
+    }
+
+    setAuthLoading(false);
+  }
+
+  async function loadRole(userId) {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.log('Role error:', error.message);
+      setRole('viewer');
+      return;
+    }
+
+    setRole(data?.role || 'viewer');
+  }
+
+  async function loginUser(e) {
+    e.preventDefault();
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password: loginPassword
+    });
+
+    if (error) {
+      alert(error.message);
+    }
+  }
+
+  async function signOutUser() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setRole('viewer');
+    setActive('Dashboard');
+  }
 
   async function loadSettings() {
     const { data, error } = await supabase
@@ -756,6 +844,33 @@ function App() {
     Warehouse2: Number(p.w2 || 0)
   }));
 
+  const isAdmin = role === 'admin';
+  const menu = isAdmin ? adminMenu : viewerMenu;
+
+  if (authLoading) {
+    return (
+      <div className="app">
+        <main>
+          <Panel title="Loading">
+            <p>Loading Camelot Inventory...</p>
+          </Panel>
+        </main>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoginScreen
+        email={loginEmail}
+        password={loginPassword}
+        setEmail={setLoginEmail}
+        setPassword={setLoginPassword}
+        loginUser={loginUser}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -775,7 +890,7 @@ function App() {
           ))}
         </nav>
 
-        <button className="logout">
+        <button className="logout" onClick={signOutUser}>
           <LogOut size={18} /> Sign Out
         </button>
       </aside>
@@ -783,11 +898,11 @@ function App() {
       <main>
         <header>
           <div>
-            <p>Professional warehouse control</p>
+            <p>Professional warehouse control · {role === 'admin' ? 'Administrator' : 'Viewer'} · {user?.email}</p>
             <h1>{active}</h1>
           </div>
 
-          {!['Settings'].includes(active) && (
+          {isAdmin && !['Settings'].includes(active) && (
             <button className="primary" onClick={addProduct}>
               + Add Product
             </button>
@@ -827,13 +942,13 @@ function App() {
 
         {['Products', 'Inventory'].includes(active) && (
           <Panel title="Inventory List">
-            <button className="primary" onClick={addProduct}>Add Product</button>
+            {isAdmin && <button className="primary" onClick={addProduct}>Add Product</button>}
             <SearchBox query={query} setQuery={setQuery} />
-            <ProductTable rows={filtered} editProduct={editProduct} deleteProduct={deleteProduct} settings={settings} />
+            <ProductTable rows={filtered} editProduct={editProduct} deleteProduct={deleteProduct} settings={settings} canEdit={isAdmin} />
           </Panel>
         )}
 
-        {['Stock In', 'Stock Out', 'Daily Use', 'Transfers'].includes(active) && (
+        {isAdmin && ['Stock In', 'Stock Out', 'Daily Use', 'Transfers'].includes(active) && (
           <Panel title={`New ${active}`}>
             <MovementForm form={form} setForm={setForm} products={products} active={active} settings={settings} />
 
@@ -874,11 +989,12 @@ function App() {
               transfers={transfers}
               settings={settings}
               deleteRestoreMovement={deleteRestoreMovement}
+              isAdmin={isAdmin}
             />
           </Panel>
         )}
 
-        {active === 'Settings' && (
+        {isAdmin && active === 'Settings' && (
           <Panel title="Settings">
             <SettingsForm
               settings={settings}
@@ -1069,7 +1185,7 @@ function movementTableHtml(rows) {
   `;
 }
 
-function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers, settings, deleteRestoreMovement }) {
+function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers, settings, deleteRestoreMovement, isAdmin }) {
   if (reportType === 'executive') {
     return (
       <>
@@ -1127,7 +1243,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'dailyuse') {
     return (
       <Panel title="Daily Use Report">
-        <MovementTable rows={dailyUse} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={dailyUse} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1135,7 +1251,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockin') {
     return (
       <Panel title="Stock In Report">
-        <MovementTable rows={stockIn} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={stockIn} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1143,7 +1259,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockout') {
     return (
       <Panel title="Stock Out Report">
-        <MovementTable rows={stockOut} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={stockOut} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1151,7 +1267,7 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'transfers') {
     return (
       <Panel title="Transfers Report">
-        <MovementTable rows={transfers} showActions onDeleteRestore={deleteRestoreMovement} />
+        <MovementTable rows={transfers} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1195,7 +1311,7 @@ function SearchBox({ query, setQuery }) {
   );
 }
 
-function ProductTable({ rows, editProduct, deleteProduct, hideActions = false, settings }) {
+function ProductTable({ rows, editProduct, deleteProduct, hideActions = false, settings, canEdit = false }) {
   const safeRows = Array.isArray(rows) ? rows : [];
 
   return (
@@ -1211,7 +1327,7 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false, s
             <th>{settings.warehouse2_name}</th>
             <th>Total</th>
             <th>Status</th>
-            {!hideActions && <th>Actions</th>}
+            {!hideActions && canEdit && <th>Actions</th>}
           </tr>
         </thead>
 
@@ -1231,7 +1347,7 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false, s
                 </span>
               </td>
 
-              {!hideActions && (
+              {!hideActions && canEdit && (
                 <td>
                   <button onClick={() => editProduct(p)}>Edit</button>
                   <button onClick={() => deleteProduct(p.id)}>Delete</button>
@@ -1242,7 +1358,7 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false, s
 
           {safeRows.length === 0 && (
             <tr>
-              <td colSpan={hideActions ? 8 : 9}>No records found.</td>
+              <td colSpan={hideActions || !canEdit ? 8 : 9}>No records found.</td>
             </tr>
           )}
         </tbody>
@@ -1490,6 +1606,45 @@ function MovementForm({ form, setForm, products, active, settings }) {
         Notes
         <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
       </label>
+    </div>
+  );
+}
+
+
+function LoginScreen({ email, password, setEmail, setPassword, loginUser }) {
+  return (
+    <div className="app">
+      <main style={{ maxWidth: 480, margin: '80px auto' }}>
+        <Panel title="Camelot Inventory Login">
+          <form className="form" onSubmit={loginUser}>
+            <label className="full">
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
+                required
+              />
+            </label>
+
+            <label className="full">
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+              />
+            </label>
+
+            <button className="primary wide" type="submit">
+              Sign In
+            </button>
+          </form>
+        </Panel>
+      </main>
     </div>
   );
 }
