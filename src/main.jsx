@@ -101,6 +101,10 @@ function App() {
   });
 
   useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 2500);
+
     initAuth();
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -121,11 +125,13 @@ function App() {
         setUser(null);
         setRole('viewer');
       } finally {
+        clearTimeout(safetyTimer);
         setAuthLoading(false);
       }
     });
 
     return () => {
+      clearTimeout(safetyTimer);
       listener?.subscription?.unsubscribe();
     };
   }, []);
@@ -139,6 +145,8 @@ function App() {
 
   async function initAuth() {
     try {
+      setAuthLoading(false);
+
       const { data, error } = await supabase.auth.getSession();
 
       if (error) {
@@ -161,7 +169,6 @@ function App() {
       console.log('Auth loading error:', error);
       setUser(null);
       setRole('viewer');
-    } finally {
       setAuthLoading(false);
     }
   }
