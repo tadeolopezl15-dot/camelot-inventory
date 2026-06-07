@@ -684,7 +684,9 @@ function App() {
 
       function drawTableHeader() {
         let x = margin;
-        doc.setFillColor(243, 244, 246);
+
+        doc.setFillColor(255, 255, 255);
+        doc.setTextColor(17, 24, 39);
         doc.setDrawColor(209, 213, 219);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
@@ -701,9 +703,11 @@ function App() {
       drawTableHeader();
 
       if (!rows || rows.length === 0) {
+        doc.setFillColor(255, 255, 255);
+        doc.setTextColor(17, 24, 39);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        doc.rect(margin, y, usableWidth, rowHeight);
+        doc.rect(margin, y, usableWidth, rowHeight, 'FD');
         doc.text('No records found.', margin + 2, y + 5.3);
         y += rowHeight + 4;
         return;
@@ -718,13 +722,16 @@ function App() {
         }
 
         let x = margin;
+
+        doc.setFillColor(255, 255, 255);
+        doc.setTextColor(17, 24, 39);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         doc.setDrawColor(209, 213, 219);
 
         columns.forEach((col, i) => {
           const value = row[col.key] === undefined || row[col.key] === null ? '' : String(row[col.key]);
-          doc.rect(x, y, widths[i], rowHeight);
+          doc.rect(x, y, widths[i], rowHeight, 'FD');
           doc.text(value, x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
           x += widths[i];
         });
@@ -812,7 +819,8 @@ function App() {
             .card strong { display: block; font-size: 20px; margin-top: 6px; }
             table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
             th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; }
-            th { background: #f3f4f6; }
+            th { background: #ffffff; color: #111827; font-weight: 700; }
+            td { background: #ffffff; color: #111827; }
           </style>
         </head>
         <body>
