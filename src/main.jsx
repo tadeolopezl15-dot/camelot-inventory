@@ -101,37 +101,25 @@ function App() {
   });
 
   useEffect(() => {
-    const safetyTimer = setTimeout(() => {
-      setAuthLoading(false);
-    }, 2500);
-
     initAuth();
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      try {
-        const currentUser = session?.user || null;
-        setUser(currentUser);
+      const currentUser = session?.user || null;
+      setUser(currentUser);
 
-        if (currentUser) {
-          await loadRole(currentUser.id);
-          await loadProducts();
-          await loadMovements();
-          await loadSettings();
-        } else {
-          setRole('viewer');
-        }
-      } catch (error) {
-        console.log('Auth state error:', error);
-        setUser(null);
+      if (currentUser) {
+        await loadRole(currentUser.id);
+        await loadProducts();
+        await loadMovements();
+        await loadSettings();
+      } else {
         setRole('viewer');
-      } finally {
-        clearTimeout(safetyTimer);
-        setAuthLoading(false);
       }
+
+      setAuthLoading(false);
     });
 
     return () => {
-      clearTimeout(safetyTimer);
       listener?.subscription?.unsubscribe();
     };
   }, []);
@@ -144,33 +132,19 @@ function App() {
 
 
   async function initAuth() {
-    try {
-      setAuthLoading(false);
+    const { data } = await supabase.auth.getSession();
+    const currentUser = data?.session?.user || null;
 
-      const { data, error } = await supabase.auth.getSession();
+    setUser(currentUser);
 
-      if (error) {
-        console.log('Session error:', error.message);
-        setUser(null);
-        setRole('viewer');
-        return;
-      }
-
-      const currentUser = data?.session?.user || null;
-      setUser(currentUser);
-
-      if (currentUser) {
-        await loadRole(currentUser.id);
-        await loadProducts();
-        await loadMovements();
-        await loadSettings();
-      }
-    } catch (error) {
-      console.log('Auth loading error:', error);
-      setUser(null);
-      setRole('viewer');
-      setAuthLoading(false);
+    if (currentUser) {
+      await loadRole(currentUser.id);
+      await loadProducts();
+      await loadMovements();
+      await loadSettings();
     }
+
+    setAuthLoading(false);
   }
 
   async function loadRole(userId) {
@@ -729,11 +703,9 @@ function App() {
       drawTableHeader();
 
       if (!rows || rows.length === 0) {
-        doc.setFillColor(255, 255, 255);
-        doc.setTextColor(17, 24, 39);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        doc.rect(margin, y, usableWidth, rowHeight, 'FD');
+        doc.rect(margin, y, usableWidth, rowHeight);
         doc.text('No records found.', margin + 2, y + 5.3);
         y += rowHeight + 4;
         return;
@@ -1155,20 +1127,20 @@ function inventoryTableHtml(rows, settings) {
     <table>
       <thead>
         <tr>
-          <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Code</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Product</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Category</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Unit</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${settings.warehouse1_name}</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${settings.warehouse2_name}</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Total</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Status</th>
+          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>${settings.warehouse1_name}</th><th>${settings.warehouse2_name}</th><th>Total</th><th>Status</th>
         </tr>
       </thead>
       <tbody>
         ${rows.map((p) => `
           <tr>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.code}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.name}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.category}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.unit}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.w1}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.w2}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${productStatus(p, settings)}</td>
+            <td>${p.code}</td>
+            <td>${p.name}</td>
+            <td>${p.category}</td>
+            <td>${p.unit}</td>
+            <td>${p.w1}</td>
+            <td>${p.w2}</td>
+            <td>${Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
+            <td>${productStatus(p, settings)}</td>
           </tr>
         `).join('') || '<tr><td colspan="8">No records found.</td></tr>'}
       </tbody>
@@ -1186,18 +1158,18 @@ function warehouseTableHtml(rows, warehouse, settings) {
     <table>
       <thead>
         <tr>
-          <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Code</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Product</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Category</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Unit</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${label}</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Status</th>
+          <th>Code</th><th>Product</th><th>Category</th><th>Unit</th><th>${label}</th><th>Status</th>
         </tr>
       </thead>
       <tbody>
         ${filtered.map((p) => `
           <tr>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.code}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.name}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.category}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${p.unit}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${Number(p[key] || 0)}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${warehouseStatus(p, key, settings)}</td>
+            <td>${p.code}</td>
+            <td>${p.name}</td>
+            <td>${p.category}</td>
+            <td>${p.unit}</td>
+            <td>${Number(p[key] || 0)}</td>
+            <td>${warehouseStatus(p, key, settings)}</td>
           </tr>
         `).join('') || '<tr><td colspan="6">No records found.</td></tr>'}
       </tbody>
@@ -1210,17 +1182,17 @@ function movementTableHtml(rows) {
     <h2>Movement Report</h2>
     <table>
       <thead>
-        <tr><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Date</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Type</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Product</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Qty</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">From</th><th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">To / Used For</th></tr>
+        <tr><th>Date</th><th>Type</th><th>Product</th><th>Qty</th><th>From</th><th>To / Used For</th></tr>
       </thead>
       <tbody>
         ${rows.map((m) => `
           <tr>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${m.date}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${m.type}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${m.product}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${m.qty}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${m.from}</td>
-            <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">${m.to}</td>
+            <td>${m.date}</td>
+            <td>${m.type}</td>
+            <td>${m.product}</td>
+            <td>${m.qty}</td>
+            <td>${m.from}</td>
+            <td>${m.to}</td>
           </tr>
         `).join('') || '<tr><td colspan="6">No records found.</td></tr>'}
       </tbody>
@@ -1362,36 +1334,36 @@ function ProductTable({ rows, editProduct, deleteProduct, hideActions = false, s
       <table>
         <thead>
           <tr>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Code</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Product</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Category</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Unit</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{settings.warehouse1_name}</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{settings.warehouse2_name}</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Total</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Status</th>
-            {!hideActions && canEdit && <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Actions</th>}
+            <th>Code</th>
+            <th>Product</th>
+            <th>Category</th>
+            <th>Unit</th>
+            <th>{settings.warehouse1_name}</th>
+            <th>{settings.warehouse2_name}</th>
+            <th>Total</th>
+            <th>Status</th>
+            {!hideActions && canEdit && <th>Actions</th>}
           </tr>
         </thead>
 
         <tbody>
           {safeRows.map((p) => (
             <tr key={p.id}>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.code}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.name}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.category}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.unit}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.w1}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.w2}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">
+              <td>{p.code}</td>
+              <td>{p.name}</td>
+              <td>{p.category}</td>
+              <td>{p.unit}</td>
+              <td>{p.w1}</td>
+              <td>{p.w2}</td>
+              <td>{Number(p.w1 || 0) + Number(p.w2 || 0)}</td>
+              <td>
                 <span className={productStatus(p, settings) === 'Low Stock' ? 'badge low' : 'badge'}>
                   {productStatus(p, settings)}
                 </span>
               </td>
 
               {!hideActions && canEdit && (
-                <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">
+                <td>
                   <button onClick={() => editProduct(p)}>Edit</button>
                   <button onClick={() => deleteProduct(p.id)}>Delete</button>
                 </td>
@@ -1421,24 +1393,24 @@ function WarehouseReportTable({ rows, warehouse, settings }) {
       <table>
         <thead>
           <tr>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Code</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Product</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Category</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Unit</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{label}</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Status</th>
+            <th>Code</th>
+            <th>Product</th>
+            <th>Category</th>
+            <th>Unit</th>
+            <th>{label}</th>
+            <th>Status</th>
           </tr>
         </thead>
 
         <tbody>
           {filtered.map((p) => (
             <tr key={p.id}>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.code}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.name}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.category}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{p.unit}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{Number(p[key] || 0)}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">
+              <td>{p.code}</td>
+              <td>{p.name}</td>
+              <td>{p.category}</td>
+              <td>{p.unit}</td>
+              <td>{Number(p[key] || 0)}</td>
+              <td>
                 <span className={warehouseStatus(p, key, settings) === 'Low Stock' ? 'badge low' : 'badge'}>
                   {warehouseStatus(p, key, settings)}
                 </span>
@@ -1465,27 +1437,27 @@ function MovementTable({ rows, showActions = false, onDeleteRestore }) {
       <table>
         <thead>
           <tr>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Date</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Type</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Product</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Qty</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">From</th>
-            <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">To / Used For</th>
-            {showActions && <th style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">Actions</th>}
+            <th>Date</th>
+            <th>Type</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>From</th>
+            <th>To / Used For</th>
+            {showActions && <th>Actions</th>}
           </tr>
         </thead>
 
         <tbody>
           {safeRows.map((m) => (
             <tr key={m.id}>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{m.date}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{m.type}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{m.product}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{m.qty}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{m.from}</td>
-              <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">{m.to}</td>
+              <td>{m.date}</td>
+              <td>{m.type}</td>
+              <td>{m.product}</td>
+              <td>{m.qty}</td>
+              <td>{m.from}</td>
+              <td>{m.to}</td>
               {showActions && (
-                <td style="background:#ffffff!important;color:#111827!important;border:1px solid #d1d5db;">
+                <td>
                   <button onClick={() => onDeleteRestore(m)}>
                     Delete / Restore
                   </button>
