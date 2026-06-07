@@ -104,19 +104,25 @@ function App() {
     initAuth();
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const currentUser = session?.user || null;
-      setUser(currentUser);
+      try {
+        const currentUser = session?.user || null;
+        setUser(currentUser);
 
-      if (currentUser) {
-        await loadRole(currentUser.id);
-        await loadProducts();
-        await loadMovements();
-        await loadSettings();
-      } else {
+        if (currentUser) {
+          await loadRole(currentUser.id);
+          await loadProducts();
+          await loadMovements();
+          await loadSettings();
+        } else {
+          setRole('viewer');
+        }
+      } catch (error) {
+        console.log('Auth state error:', error);
+        setUser(null);
         setRole('viewer');
+      } finally {
+        setAuthLoading(false);
       }
-
-      setAuthLoading(false);
     });
 
     return () => {
@@ -132,19 +138,32 @@ function App() {
 
 
   async function initAuth() {
-    const { data } = await supabase.auth.getSession();
-    const currentUser = data?.session?.user || null;
+    try {
+      const { data, error } = await supabase.auth.getSession();
 
-    setUser(currentUser);
+      if (error) {
+        console.log('Session error:', error.message);
+        setUser(null);
+        setRole('viewer');
+        return;
+      }
 
-    if (currentUser) {
-      await loadRole(currentUser.id);
-      await loadProducts();
-      await loadMovements();
-      await loadSettings();
+      const currentUser = data?.session?.user || null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        await loadRole(currentUser.id);
+        await loadProducts();
+        await loadMovements();
+        await loadSettings();
+      }
+    } catch (error) {
+      console.log('Auth loading error:', error);
+      setUser(null);
+      setRole('viewer');
+    } finally {
+      setAuthLoading(false);
     }
-
-    setAuthLoading(false);
   }
 
   async function loadRole(userId) {
@@ -703,9 +722,11 @@ function App() {
       drawTableHeader();
 
       if (!rows || rows.length === 0) {
+        doc.setFillColor(255, 255, 255);
+        doc.setTextColor(17, 24, 39);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        doc.rect(margin, y, usableWidth, rowHeight);
+        doc.rect(margin, y, usableWidth, rowHeight, 'FD');
         doc.text('No records found.', margin + 2, y + 5.3);
         y += rowHeight + 4;
         return;
@@ -855,9 +876,19 @@ function App() {
   if (authLoading) {
     return (
       <div className="app">
-        <main>
+        <main style={{ maxWidth: 480, margin: '80px auto' }}>
           <Panel title="Loading">
             <p>Loading Camelot Inventory...</p>
+            <button
+              className="primary wide"
+              onClick={() => {
+                setAuthLoading(false);
+                setUser(null);
+                setRole('viewer');
+              }}
+            >
+              Continue to Login
+            </button>
           </Panel>
         </main>
       </div>
