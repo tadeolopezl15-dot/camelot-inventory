@@ -685,15 +685,17 @@ function App() {
       function drawTableHeader() {
         let x = margin;
 
-        doc.setFillColor(255, 255, 255);
         doc.setTextColor(17, 24, 39);
         doc.setDrawColor(209, 213, 219);
+        doc.setLineWidth(0.2);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
 
         columns.forEach((col, i) => {
-          doc.rect(x, y, widths[i], rowHeight, 'FD');
-          doc.text(col.label, x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
+          doc.setTextColor(17, 24, 39);
+          doc.setDrawColor(209, 213, 219);
+          doc.rect(x, y, widths[i], rowHeight, 'S');
+          doc.text(String(col.label || ''), x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
           x += widths[i];
         });
 
@@ -721,15 +723,17 @@ function App() {
 
         let x = margin;
 
-        doc.setFillColor(255, 255, 255);
         doc.setTextColor(17, 24, 39);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         doc.setDrawColor(209, 213, 219);
+        doc.setLineWidth(0.2);
 
         columns.forEach((col, i) => {
           const value = row[col.key] === undefined || row[col.key] === null ? '' : String(row[col.key]);
-          doc.rect(x, y, widths[i], rowHeight, 'FD');
+          doc.setTextColor(17, 24, 39);
+          doc.setDrawColor(209, 213, 219);
+          doc.rect(x, y, widths[i], rowHeight, 'S');
           doc.text(value, x + 2, y + 5.3, { maxWidth: widths[i] - 4 });
           x += widths[i];
         });
@@ -816,8 +820,8 @@ function App() {
             .card { border: 1px solid #d1d5db; padding: 12px; border-radius: 8px; }
             .card strong { display: block; font-size: 20px; margin-top: 6px; }
             table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; background: #ffffff; }
-            th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; background: #ffffff !important; color: #111827 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            th { background: #ffffff !important; color: #111827 !important; font-weight: 700; }
+            th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; background: #ffffff; color: #111827; }
+            th { font-weight: 700; }
           </style>
         </head>
         <body>
