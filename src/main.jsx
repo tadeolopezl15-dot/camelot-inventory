@@ -437,44 +437,68 @@ function App() {
 
   async function addMovement(type) {
     const movementType = type === 'Transfers' ? 'Transfer' : type;
-    const product = products.find((p) => p.id === Number(form.productId));
+    const productId = Number(form.productId);
     const qty = Number(form.qty || 0);
 
-    if (!product || qty <= 0) return;
+    if (!productId) return alert('Select a product.');
+    if (qty <= 0) return alert('Enter a valid quantity.');
 
-    if (movementType === 'Daily Use' && Number(product.w1 || 0) < qty) {
-      return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${Number(product.w1 || 0)}`);
+    const { data: freshProduct, error: productError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .single();
+
+    if (productError || !freshProduct) {
+      console.log('Product load error:', productError?.message);
+      return alert('Product not found.');
     }
 
-    if ((movementType === 'Stock Out' || movementType === 'Transfer') && form.warehouse === 'Warehouse 1' && Number(product.w1 || 0) < qty) {
-      return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${Number(product.w1 || 0)}`);
-    }
+    const product = {
+      id: freshProduct.id,
+      code: freshProduct.code,
+      name: freshProduct.name,
+      category: freshProduct.category || 'General',
+      unit: freshProduct.unit || 'units',
+      min: Number(freshProduct.min_stock || 0),
+      w1: Number(freshProduct.w1 || 0),
+      w2: Number(freshProduct.w2 || 0)
+    };
 
-    if ((movementType === 'Stock Out' || movementType === 'Transfer') && form.warehouse === 'Warehouse 2' && Number(product.w2 || 0) < qty) {
-      return alert(`Not enough stock in ${settings.warehouse2_name}. Available: ${Number(product.w2 || 0)}`);
-    }
-
-    let updated = { ...product };
+    let nextW1 = Number(product.w1 || 0);
+    let nextW2 = Number(product.w2 || 0);
     let from = '';
     let to = '';
 
     if (movementType === 'Stock In') {
       to = form.warehouse;
-      const key = form.warehouse === 'Warehouse 1' ? 'w1' : 'w2';
-      updated[key] = Number(updated[key] || 0) + qty;
+
+      if (form.warehouse === 'Warehouse 2') {
+        nextW2 += qty;
+      } else {
+        nextW1 += qty;
+      }
     }
 
     if (movementType === 'Stock Out') {
       from = form.warehouse;
       to = form.destination || 'Job Site';
-      const key = form.warehouse === 'Warehouse 1' ? 'w1' : 'w2';
-      updated[key] = Math.max(0, Number(updated[key] || 0) - qty);
+
+      if (form.warehouse === 'Warehouse 2') {
+        if (nextW2 < qty) return alert(`Not enough stock in ${settings.warehouse2_name}. Available: ${nextW2}`);
+        nextW2 -= qty;
+      } else {
+        if (nextW1 < qty) return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${nextW1}`);
+        nextW1 -= qty;
+      }
     }
 
     if (movementType === 'Daily Use') {
       from = 'Warehouse 1';
       to = form.destination || 'Daily Use';
-      updated.w1 = Math.max(0, Number(updated.w1 || 0) - qty);
+
+      if (nextW1 < qty) return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${nextW1}`);
+      nextW1 -= qty;
     }
 
     if (movementType === 'Transfer') {
@@ -482,20 +506,30 @@ function App() {
       to = form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1';
 
       if (form.warehouse === 'Warehouse 1') {
-        updated.w1 = Math.max(0, Number(updated.w1 || 0) - qty);
-        updated.w2 = Number(updated.w2 || 0) + qty;
+        if (nextW1 < qty) return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${nextW1}`);
+        nextW1 -= qty;
+        nextW2 += qty;
       } else {
-        updated.w2 = Math.max(0, Number(updated.w2 || 0) - qty);
-        updated.w1 = Number(updated.w1 || 0) + qty;
+        if (nextW2 < qty) return alert(`Not enough stock in ${settings.warehouse2_name}. Available: ${nextW2}`);
+        nextW2 -= qty;
+        nextW1 += qty;
       }
     }
 
-    const { error } = await supabase
+    const { data: updatedProduct, error: updateError } = await supabase
       .from('products')
-      .update({ w1: updated.w1, w2: updated.w2 })
-      .eq('id', product.id);
+      .update({
+        w1: nextW1,
+        w2: nextW2
+      })
+      .eq('id', product.id)
+      .select()
+      .single();
 
-    if (error) return alert(error.message);
+    if (updateError) {
+      console.log('Inventory update error:', updateError.message);
+      return alert(`Inventory update failed: ${updateError.message}`);
+    }
 
     const movement = {
       product_id: product.id,
@@ -508,21 +542,37 @@ function App() {
       notes: form.notes
     };
 
-    const { error: movementError } = await supabase.from('inventory_movements').insert(movement);
+    const { error: movementError } = await supabase
+      .from('inventory_movements')
+      .insert(movement);
 
     if (movementError) {
-      alert(movementError.message);
       console.log('Movement save error:', movementError.message);
+      return alert(`Movement saved failed: ${movementError.message}`);
     }
 
-    setForm({ ...form, qty: 1, destination: '', notes: '' });
+    setProducts((prev) =>
+      prev.map((item) =>
+        item.id === product.id
+          ? { ...item, w1: Number(updatedProduct.w1 || 0), w2: Number(updatedProduct.w2 || 0) }
+          : item
+      )
+    );
+
+    setForm({
+      ...form,
+      qty: 1,
+      destination: '',
+      notes: ''
+    });
 
     await loadProducts();
     await loadMovements();
     await createSupabaseBackup(`${movementType} Created`);
 
     if (movementType === 'Transfer') {
-      alert('Transfer completed. Inventory was updated in both warehouses.');
+      alert(`Transfer completed. ${product.name}: ${from} -${qty}, ${to} +${qty}.`);
+      setActive('Inventory');
     }
   }
 
