@@ -436,20 +436,21 @@ function App() {
   }, [products, movements, settings.low_stock_alert]);
 
   async function addMovement(type) {
+    const movementType = type === 'Transfers' ? 'Transfer' : type;
     const product = products.find((p) => p.id === Number(form.productId));
     const qty = Number(form.qty || 0);
 
     if (!product || qty <= 0) return;
 
-    if (type === 'Daily Use' && Number(product.w1 || 0) < qty) {
+    if (movementType === 'Daily Use' && Number(product.w1 || 0) < qty) {
       return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${Number(product.w1 || 0)}`);
     }
 
-    if ((type === 'Stock Out' || type === 'Transfer') && form.warehouse === 'Warehouse 1' && Number(product.w1 || 0) < qty) {
+    if ((movementType === 'Stock Out' || movementType === 'Transfer') && form.warehouse === 'Warehouse 1' && Number(product.w1 || 0) < qty) {
       return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${Number(product.w1 || 0)}`);
     }
 
-    if ((type === 'Stock Out' || type === 'Transfer') && form.warehouse === 'Warehouse 2' && Number(product.w2 || 0) < qty) {
+    if ((movementType === 'Stock Out' || movementType === 'Transfer') && form.warehouse === 'Warehouse 2' && Number(product.w2 || 0) < qty) {
       return alert(`Not enough stock in ${settings.warehouse2_name}. Available: ${Number(product.w2 || 0)}`);
     }
 
@@ -457,26 +458,26 @@ function App() {
     let from = '';
     let to = '';
 
-    if (type === 'Stock In') {
+    if (movementType === 'Stock In') {
       to = form.warehouse;
       const key = form.warehouse === 'Warehouse 1' ? 'w1' : 'w2';
       updated[key] = Number(updated[key] || 0) + qty;
     }
 
-    if (type === 'Stock Out') {
+    if (movementType === 'Stock Out') {
       from = form.warehouse;
       to = form.destination || 'Job Site';
       const key = form.warehouse === 'Warehouse 1' ? 'w1' : 'w2';
       updated[key] = Math.max(0, Number(updated[key] || 0) - qty);
     }
 
-    if (type === 'Daily Use') {
+    if (movementType === 'Daily Use') {
       from = 'Warehouse 1';
       to = form.destination || 'Daily Use';
       updated.w1 = Math.max(0, Number(updated.w1 || 0) - qty);
     }
 
-    if (type === 'Transfer') {
+    if (movementType === 'Transfer') {
       from = form.warehouse;
       to = form.warehouse === 'Warehouse 1' ? 'Warehouse 2' : 'Warehouse 1';
 
@@ -499,7 +500,7 @@ function App() {
     const movement = {
       product_id: product.id,
       date: isoDate(),
-      type,
+      type: movementType,
       product: product.name,
       qty,
       from_location: from || 'Supplier',
@@ -518,9 +519,9 @@ function App() {
 
     await loadProducts();
     await loadMovements();
-    await createSupabaseBackup(`${type} Created`);
+    await createSupabaseBackup(`${movementType} Created`);
 
-    if (type === 'Transfer') {
+    if (movementType === 'Transfer') {
       alert('Transfer completed. Inventory was updated in both warehouses.');
     }
   }
@@ -561,7 +562,7 @@ function App() {
       else nextW1 = Math.max(0, nextW1 - qty);
     }
 
-    if (movement.type === 'Transfer') {
+    if (movement.type === 'Transfer' || movement.type === 'Transfers') {
       if (movement.from === 'Warehouse 1' && movement.to === 'Warehouse 2') {
         nextW1 += qty;
         nextW2 = Math.max(0, nextW2 - qty);
@@ -622,7 +623,7 @@ function App() {
   const dailyUse = movements.filter((m) => m.type === 'Daily Use');
   const stockIn = movements.filter((m) => m.type === 'Stock In');
   const stockOut = movements.filter((m) => m.type === 'Stock Out');
-  const transfers = movements.filter((m) => m.type === 'Transfer');
+  const transfers = movements.filter((m) => m.type === 'Transfer' || m.type === 'Transfers');
 
   const selectedRows = useMemo(() => {
     if (reportType === 'executive') return products;
@@ -1051,7 +1052,7 @@ function App() {
           <Panel title={`New ${active}`}>
             <MovementForm form={form} setForm={setForm} products={products} active={active} settings={settings} />
 
-            <button className="primary wide" onClick={() => addMovement(active)}>
+            <button className="primary wide" onClick={() => addMovement(active === 'Transfers' ? 'Transfer' : active)}>
               {active === 'Transfers' ? 'Transfer Stock' : active === 'Daily Use' ? 'Save Daily Use' : `Save ${active}`}
             </button>
           </Panel>
