@@ -91,7 +91,10 @@ function App() {
   const [movements, setMovements] = useState([]);
   const [query, setQuery] = useState('');
   const [reportType, setReportType] = useState('executive');
+  const [reportDateFrom, setReportDateFrom] = useState('');
+  const [reportDateTo, setReportDateTo] = useState('');
   const [settings, setSettings] = useState(defaultSettings);
+  const [backupStatus, setBackupStatus] = useState('');
   const [form, setForm] = useState({
     productId: '',
     qty: 1,
@@ -227,6 +230,7 @@ function App() {
 
     alert('Settings saved.');
     await loadSettings();
+    await createSupabaseBackup('Settings Updated');
   }
 
   function updateSetting(field, value) {
@@ -255,6 +259,37 @@ function App() {
     a.click();
 
     URL.revokeObjectURL(url);
+  }
+
+
+  async function createSupabaseBackup(reason = 'Manual Backup') {
+    try {
+      const backup = {
+        generated_at: new Date().toISOString(),
+        reason,
+        user_email: user?.email || '',
+        settings,
+        products,
+        movements
+      };
+
+      const { error } = await supabase.from('app_backups').insert({
+        reason,
+        user_email: user?.email || '',
+        backup_data: backup
+      });
+
+      if (error) {
+        console.log('Backup error:', error.message);
+        setBackupStatus(`Backup error: ${error.message}`);
+        return;
+      }
+
+      setBackupStatus(`Backup saved: ${new Date().toLocaleString('en-US')}`);
+    } catch (error) {
+      console.log('Backup error:', error);
+      setBackupStatus('Backup error.');
+    }
   }
 
   async function loadProducts() {
@@ -340,6 +375,7 @@ function App() {
 
     if (error) return alert(error.message);
     await loadProducts();
+    await createSupabaseBackup('Product Created');
   }
 
   async function editProduct(product) {
@@ -370,6 +406,7 @@ function App() {
 
     if (error) return alert(error.message);
     await loadProducts();
+    await createSupabaseBackup('Product Updated');
   }
 
   async function deleteProduct(id) {
@@ -379,6 +416,7 @@ function App() {
 
     if (error) return alert(error.message);
     await loadProducts();
+    await createSupabaseBackup('Product Deleted');
   }
 
   const totals = useMemo(() => {
@@ -402,6 +440,18 @@ function App() {
     const qty = Number(form.qty || 0);
 
     if (!product || qty <= 0) return;
+
+    if (type === 'Daily Use' && Number(product.w1 || 0) < qty) {
+      return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${Number(product.w1 || 0)}`);
+    }
+
+    if ((type === 'Stock Out' || type === 'Transfer') && form.warehouse === 'Warehouse 1' && Number(product.w1 || 0) < qty) {
+      return alert(`Not enough stock in ${settings.warehouse1_name}. Available: ${Number(product.w1 || 0)}`);
+    }
+
+    if ((type === 'Stock Out' || type === 'Transfer') && form.warehouse === 'Warehouse 2' && Number(product.w2 || 0) < qty) {
+      return alert(`Not enough stock in ${settings.warehouse2_name}. Available: ${Number(product.w2 || 0)}`);
+    }
 
     let updated = { ...product };
     let from = '';
@@ -468,6 +518,11 @@ function App() {
 
     await loadProducts();
     await loadMovements();
+    await createSupabaseBackup(`${type} Created`);
+
+    if (type === 'Transfer') {
+      alert('Transfer completed. Inventory was updated in both warehouses.');
+    }
   }
 
   async function deleteRestoreMovement(movement) {
@@ -532,7 +587,31 @@ function App() {
 
     await loadProducts();
     await loadMovements();
+    await createSupabaseBackup('Movement Deleted / Restored');
     alert('Movement deleted and inventory restored.');
+  }
+
+
+  function isMovementReport(type) {
+    return ['dailyuse', 'stockin', 'stockout', 'transfers'].includes(type);
+  }
+
+  function filterRowsByDate(rows) {
+    if (!Array.isArray(rows)) return [];
+
+    return rows.filter((row) => {
+      if (!row?.date) return true;
+      if (reportDateFrom && row.date < reportDateFrom) return false;
+      if (reportDateTo && row.date > reportDateTo) return false;
+      return true;
+    });
+  }
+
+  function reportDateRangeText() {
+    if (reportDateFrom && reportDateTo) return `From ${reportDateFrom} to ${reportDateTo}`;
+    if (reportDateFrom) return `From ${reportDateFrom}`;
+    if (reportDateTo) return `Until ${reportDateTo}`;
+    return '';
   }
 
   const lowStock = products.filter((p) => {
@@ -551,12 +630,12 @@ function App() {
     if (reportType === 'warehouse1') return products.filter((p) => Number(p.w1 || 0) > 0);
     if (reportType === 'warehouse2') return products.filter((p) => Number(p.w2 || 0) > 0);
     if (reportType === 'lowstock') return lowStock;
-    if (reportType === 'dailyuse') return dailyUse;
-    if (reportType === 'stockin') return stockIn;
-    if (reportType === 'stockout') return stockOut;
-    if (reportType === 'transfers') return transfers;
+    if (reportType === 'dailyuse') return filterRowsByDate(dailyUse);
+    if (reportType === 'stockin') return filterRowsByDate(stockIn);
+    if (reportType === 'stockout') return filterRowsByDate(stockOut);
+    if (reportType === 'transfers') return filterRowsByDate(transfers);
     return products;
-  }, [reportType, products, lowStock, dailyUse, stockIn, stockOut, transfers]);
+  }, [reportType, products, lowStock, dailyUse, stockIn, stockOut, transfers, reportDateFrom, reportDateTo]);
 
   function exportExcel() {
     const wb = XLSX.utils.book_new();
@@ -829,6 +908,7 @@ function App() {
             <h1>${settings.report_title || settings.company_name || 'Camelot Inventory Management'}</h1>
             <p>${title}</p>
             <p>Generated: ${todayText()}</p>
+            ${isMovementReport(reportType) && reportDateRangeText() ? `<p>${reportDateRangeText()}</p>` : ''}
           </div>
 
           ${getPrintableReportHtml(reportType, products, selectedRows, totals, settings)}
@@ -988,6 +1068,41 @@ function App() {
                   ))}
                 </select>
               </label>
+
+              {isMovementReport(reportType) && (
+                <>
+                  <label>
+                    Date From
+                    <input
+                      type="date"
+                      value={reportDateFrom}
+                      onChange={(e) => setReportDateFrom(e.target.value)}
+                    />
+                  </label>
+
+                  <label>
+                    Date To
+                    <input
+                      type="date"
+                      value={reportDateTo}
+                      onChange={(e) => setReportDateTo(e.target.value)}
+                    />
+                  </label>
+
+                  <label>
+                    Clear Dates
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReportDateFrom('');
+                        setReportDateTo('');
+                      }}
+                    >
+                      Show All Dates
+                    </button>
+                  </label>
+                </>
+              )}
             </div>
 
             <div className="report-actions">
@@ -1009,6 +1124,8 @@ function App() {
               settings={settings}
               deleteRestoreMovement={deleteRestoreMovement}
               isAdmin={isAdmin}
+              filteredMovementRows={selectedRows}
+              reportDateRange={reportDateRangeText()}
             />
           </Panel>
         )}
@@ -1021,6 +1138,8 @@ function App() {
               saveSettings={saveSettings}
               resetSettingsDefaults={resetSettingsDefaults}
               exportBackup={exportBackup}
+              createSupabaseBackup={createSupabaseBackup}
+              backupStatus={backupStatus}
             />
           </Panel>
         )}
@@ -1204,7 +1323,7 @@ function movementTableHtml(rows) {
   `;
 }
 
-function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers, settings, deleteRestoreMovement, isAdmin }) {
+function ReportContent({ reportType, products, selectedRows, totals, lowStock, dailyUse, stockIn, stockOut, transfers, settings, deleteRestoreMovement, isAdmin, filteredMovementRows, reportDateRange }) {
   if (reportType === 'executive') {
     return (
       <>
@@ -1262,7 +1381,8 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'dailyuse') {
     return (
       <Panel title="Daily Use Report">
-        <MovementTable rows={dailyUse} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
+        {reportDateRange && <p style={{ color: '#90a4bd' }}>{reportDateRange}</p>}
+        <MovementTable rows={filteredMovementRows} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1270,7 +1390,8 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockin') {
     return (
       <Panel title="Stock In Report">
-        <MovementTable rows={stockIn} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
+        {reportDateRange && <p style={{ color: '#90a4bd' }}>{reportDateRange}</p>}
+        <MovementTable rows={filteredMovementRows} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1278,7 +1399,8 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'stockout') {
     return (
       <Panel title="Stock Out Report">
-        <MovementTable rows={stockOut} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
+        {reportDateRange && <p style={{ color: '#90a4bd' }}>{reportDateRange}</p>}
+        <MovementTable rows={filteredMovementRows} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1286,7 +1408,8 @@ function ReportContent({ reportType, products, selectedRows, totals, lowStock, d
   if (reportType === 'transfers') {
     return (
       <Panel title="Transfers Report">
-        <MovementTable rows={transfers} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
+        {reportDateRange && <p style={{ color: '#90a4bd' }}>{reportDateRange}</p>}
+        <MovementTable rows={filteredMovementRows} showActions={isAdmin} onDeleteRestore={deleteRestoreMovement} />
       </Panel>
     );
   }
@@ -1481,7 +1604,7 @@ function MovementTable({ rows, showActions = false, onDeleteRestore }) {
   );
 }
 
-function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefaults, exportBackup }) {
+function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefaults, exportBackup, createSupabaseBackup, backupStatus }) {
   return (
     <div>
       <Panel title="Company Information">
@@ -1562,8 +1685,15 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
         <div className="report-actions">
           <button className="primary" onClick={saveSettings}>Save Settings</button>
           <button onClick={resetSettingsDefaults}>Reset Defaults</button>
-          <button onClick={exportBackup}>Export Backup</button>
+          <button onClick={exportBackup}>Export Local Backup</button>
+          <button onClick={() => createSupabaseBackup('Manual Backup')}>Save Backup to Supabase</button>
         </div>
+
+        {backupStatus && (
+          <p style={{ color: '#90a4bd', marginTop: 10 }}>
+            {backupStatus}
+          </p>
+        )}
       </Panel>
     </div>
   );
