@@ -346,3 +346,123 @@ textarea{min-height:100px;resize:vertical}
   .card h2{font-size:24px}
   .panel h2{font-size:22px}
 }
+
+/* Ultra Login */
+.auth-app{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  background:
+    radial-gradient(circle at top left, rgba(79,140,255,.35), transparent 35%),
+    radial-gradient(circle at bottom right, rgba(109,212,255,.18), transparent 35%),
+    linear-gradient(135deg,#06101d,#0b1930 45%,#0d2442);
+}
+
+.auth-main{
+  width:100%;
+  max-width:520px;
+  margin:0 auto;
+  padding:24px;
+}
+
+.auth-card{
+  background:rgba(13,27,47,.86);
+  border:1px solid rgba(141,200,255,.22);
+  border-radius:28px;
+  padding:30px;
+  box-shadow:0 30px 80px rgba(0,0,0,.38);
+  backdrop-filter:blur(18px);
+}
+
+.auth-brand{
+  display:flex;
+  gap:14px;
+  align-items:center;
+  margin-bottom:26px;
+}
+
+.auth-brand strong{
+  display:block;
+  letter-spacing:.16em;
+  color:#fff;
+}
+
+.auth-brand span{
+  display:block;
+  color:#90a4bd;
+  font-size:13px;
+}
+
+.auth-copy p{
+  margin:0 0 6px;
+  color:#8cc8ff;
+  font-weight:700;
+}
+
+.auth-copy h1{
+  font-size:38px;
+  margin:0 0 8px;
+}
+
+.auth-copy span{
+  display:block;
+  color:#90a4bd;
+  line-height:1.5;
+  margin-bottom:24px;
+}
+
+.auth-form{
+  display:grid;
+  gap:16px;
+}
+
+.auth-form label{
+  color:#b8c8db;
+}
+
+.auth-form input{
+  background:#081626;
+  border:1px solid #1d3555;
+  color:#fff;
+  border-radius:16px;
+  padding:15px;
+}
+
+.auth-link{
+  border:0;
+  background:transparent;
+  color:#8cc8ff;
+  cursor:pointer;
+  font-weight:800;
+  padding:8px;
+}
+
+.auth-note{
+  margin-top:20px;
+  border:1px solid rgba(141,200,255,.18);
+  background:rgba(8,22,38,.68);
+  border-radius:18px;
+  padding:14px;
+}
+
+.auth-note strong{
+  display:block;
+  color:#fff;
+  margin-bottom:4px;
+}
+
+.auth-note span{
+  color:#90a4bd;
+  font-size:13px;
+}
+
+@media(max-width:600px){
+  .auth-card{
+    padding:22px;
+    border-radius:22px;
+  }
+
+  .auth-copy h1{
+    font-size:30px;
+  }
+}

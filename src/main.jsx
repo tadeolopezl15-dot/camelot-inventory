@@ -87,6 +87,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
   const [query, setQuery] = useState('');
@@ -112,6 +113,7 @@ function App() {
 
       if (currentUser) {
         await loadRole(currentUser.id);
+        await loadUserProfile(currentUser);
         await loadProducts();
         await loadMovements();
         await loadSettings();
@@ -142,6 +144,7 @@ function App() {
 
     if (currentUser) {
       await loadRole(currentUser.id);
+      await loadUserProfile(currentUser);
       await loadProducts();
       await loadMovements();
       await loadSettings();
@@ -166,6 +169,59 @@ function App() {
     setRole(data?.role || 'viewer');
   }
 
+
+  async function loadUserProfile(currentUser) {
+    if (!currentUser) return;
+
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('display_name')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+
+    if (error) {
+      console.log('Profile load error:', error.message);
+      setDisplayName(currentUser.email || '');
+      return;
+    }
+
+    setDisplayName(data?.display_name || currentUser.email || '');
+  }
+
+  async function saveDisplayName(newName) {
+    if (!user) return alert('You must be logged in.');
+    const cleanName = String(newName || '').trim();
+
+    if (!cleanName) return alert('Enter a valid user name.');
+
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        user_id: user.id,
+        display_name: cleanName,
+        email: user.email
+      }, { onConflict: 'user_id' });
+
+    if (error) return alert(error.message);
+
+    setDisplayName(cleanName);
+    alert('User name updated.');
+  }
+
+  async function resetPassword(emailValue) {
+    const email = String(emailValue || loginEmail || '').trim();
+
+    if (!email) return alert('Enter your email first.');
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+
+    if (error) return alert(error.message);
+
+    alert('Password recovery email sent. Check your inbox.');
+  }
+
   async function loginUser(e) {
     e.preventDefault();
 
@@ -183,6 +239,7 @@ function App() {
     await supabase.auth.signOut();
     setUser(null);
     setRole('viewer');
+    setDisplayName('');
     setActive('Dashboard');
   }
 
@@ -289,6 +346,92 @@ function App() {
     } catch (error) {
       console.log('Backup error:', error);
       setBackupStatus('Backup error.');
+    }
+  }
+
+
+  async function restoreLatestBackup() {
+    if (!confirm('Restore the latest Supabase backup? This will replace products, settings and movement records.')) return;
+
+    const { data, error } = await supabase
+      .from('app_backups')
+      .select('*')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return alert(error.message);
+    if (!data?.backup_data) return alert('No backup found.');
+
+    const backup = data.backup_data;
+    const backupProducts = Array.isArray(backup.products) ? backup.products : [];
+    const backupMovements = Array.isArray(backup.movements) ? backup.movements : [];
+    const backupSettings = backup.settings || null;
+
+    try {
+      if (backupSettings) {
+        const settingsPayload = {
+          company_name: backupSettings.company_name || defaultSettings.company_name,
+          company_phone: backupSettings.company_phone || '',
+          company_email: backupSettings.company_email || '',
+          company_address: backupSettings.company_address || '',
+          warehouse1_name: backupSettings.warehouse1_name || 'Warehouse 1',
+          warehouse2_name: backupSettings.warehouse2_name || 'Warehouse 2',
+          low_stock_alert: Number(backupSettings.low_stock_alert || 10),
+          report_title: backupSettings.report_title || backupSettings.company_name || defaultSettings.report_title,
+          pdf_layout: backupSettings.pdf_layout || 'Professional',
+          currency: backupSettings.currency || 'USD',
+          language: backupSettings.language || 'English',
+          timezone: backupSettings.timezone || 'America/New_York'
+        };
+
+        if (settings.id) {
+          await supabase.from('settings').update(settingsPayload).eq('id', settings.id);
+        } else {
+          await supabase.from('settings').insert(settingsPayload);
+        }
+      }
+
+      await supabase.from('inventory_movements').delete().neq('id', 0);
+
+      if (backupMovements.length > 0) {
+        const movementRows = backupMovements.map((m) => ({
+          product_id: m.productId || m.product_id || null,
+          date: m.date || isoDate(),
+          type: m.type || '',
+          product: m.product || '',
+          qty: Number(m.qty || 0),
+          from_location: m.from || m.from_location || '',
+          to_location: m.to || m.to_location || '',
+          notes: m.notes || ''
+        }));
+
+        await supabase.from('inventory_movements').insert(movementRows);
+      }
+
+      for (const p of backupProducts) {
+        await supabase
+          .from('products')
+          .upsert({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            category: p.category || 'General',
+            unit: p.unit || 'units',
+            min_stock: Number(p.min || p.min_stock || 0),
+            w1: Number(p.w1 || 0),
+            w2: Number(p.w2 || 0)
+          }, { onConflict: 'id' });
+      }
+
+      await loadSettings();
+      await loadProducts();
+      await loadMovements();
+
+      alert('Latest backup restored successfully.');
+    } catch (error) {
+      console.log('Restore error:', error);
+      alert('Backup restore failed. Check Console for details.');
     }
   }
 
@@ -1017,6 +1160,7 @@ function App() {
         setEmail={setLoginEmail}
         setPassword={setLoginPassword}
         loginUser={loginUser}
+        resetPassword={resetPassword}
       />
     );
   }
@@ -1048,7 +1192,7 @@ function App() {
       <main>
         <header>
           <div>
-            <p>Professional warehouse control · {role === 'admin' ? 'Administrator' : 'Viewer'} · {user?.email}</p>
+            <p>Professional warehouse control · {role === 'admin' ? 'Administrator' : 'Viewer'} · {displayName || user?.email}</p>
             <h1>{active}</h1>
           </div>
 
@@ -1191,6 +1335,9 @@ function App() {
               exportBackup={exportBackup}
               createSupabaseBackup={createSupabaseBackup}
               backupStatus={backupStatus}
+              displayName={displayName}
+              saveDisplayName={saveDisplayName}
+              restoreLatestBackup={restoreLatestBackup}
             />
           </Panel>
         )}
@@ -1655,9 +1802,23 @@ function MovementTable({ rows, showActions = false, onDeleteRestore }) {
   );
 }
 
-function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefaults, exportBackup, createSupabaseBackup, backupStatus }) {
+function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefaults, exportBackup, createSupabaseBackup, backupStatus, displayName, saveDisplayName, restoreLatestBackup }) {
   return (
     <div>
+      <Panel title="User Profile">
+        <div className="form">
+          <label>
+            User Name
+            <input
+              value={displayName}
+              onChange={(e) => saveDisplayName(e.target.value)}
+              onBlur={(e) => saveDisplayName(e.target.value)}
+              placeholder="Your display name"
+            />
+          </label>
+        </div>
+      </Panel>
+
       <Panel title="Company Information">
         <div className="form">
           <label>
@@ -1738,6 +1899,7 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
           <button onClick={resetSettingsDefaults}>Reset Defaults</button>
           <button onClick={exportBackup}>Export Local Backup</button>
           <button onClick={() => createSupabaseBackup('Manual Backup')}>Save Backup to Supabase</button>
+          <button onClick={restoreLatestBackup}>Restore Latest Backup</button>
         </div>
 
         {backupStatus && (
@@ -1811,30 +1973,46 @@ function MovementForm({ form, setForm, products, active, settings }) {
 }
 
 
-function LoginScreen({ email, password, setEmail, setPassword, loginUser }) {
+function LoginScreen({ email, password, setEmail, setPassword, loginUser, resetPassword }) {
   return (
-    <div className="app">
-      <main style={{ maxWidth: 480, margin: '80px auto' }}>
-        <Panel title="Camelot Inventory Login">
-          <form className="form" onSubmit={loginUser}>
-            <label className="full">
+    <div className="app auth-app">
+      <main className="auth-main">
+        <div className="auth-card">
+          <div className="auth-brand">
+            <div className="logo">C</div>
+            <div>
+              <strong>CAMELOT</strong>
+              <span>Inventory Management</span>
+            </div>
+          </div>
+
+          <div className="auth-copy">
+            <p>Secure warehouse control</p>
+            <h1>Welcome back</h1>
+            <span>Sign in to manage inventory, reports, transfers and backups.</span>
+          </div>
+
+          <form className="auth-form" onSubmit={loginUser}>
+            <label>
               Email
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
+                placeholder="name@company.com"
+                autoComplete="email"
                 required
               />
             </label>
 
-            <label className="full">
+            <label>
               Password
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
+                autoComplete="current-password"
                 required
               />
             </label>
@@ -1842,8 +2020,21 @@ function LoginScreen({ email, password, setEmail, setPassword, loginUser }) {
             <button className="primary wide" type="submit">
               Sign In
             </button>
+
+            <button
+              className="auth-link"
+              type="button"
+              onClick={() => resetPassword(email)}
+            >
+              Forgot password?
+            </button>
           </form>
-        </Panel>
+
+          <div className="auth-note">
+            <strong>Recovery available</strong>
+            <span>You can recover your password and restore backups from Settings.</span>
+          </div>
+        </div>
       </main>
     </div>
   );
