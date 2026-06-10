@@ -14,6 +14,9 @@ import {
   Repeat2,
   Search,
   Settings,
+  UserCircle,
+  Eye,
+  EyeOff,
   Warehouse
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -85,9 +88,12 @@ function App() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState('viewer');
   const [authLoading, setAuthLoading] = useState(true);
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState(localStorage.getItem('camelot_email') || '');
   const [loginPassword, setLoginPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(localStorage.getItem('camelot_remember') === 'true');
+  const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState('');
+  const [profileName, setProfileName] = useState('');
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
   const [query, setQuery] = useState('');
@@ -185,7 +191,9 @@ function App() {
       return;
     }
 
-    setDisplayName(data?.display_name || currentUser.email || '');
+    const name = data?.display_name || currentUser.email || '';
+    setDisplayName(name);
+    setProfileName(name);
   }
 
   async function saveDisplayName(newName) {
@@ -205,6 +213,7 @@ function App() {
     if (error) return alert(error.message);
 
     setDisplayName(cleanName);
+    setProfileName(cleanName);
     alert('User name updated.');
   }
 
@@ -224,6 +233,14 @@ function App() {
 
   async function loginUser(e) {
     e.preventDefault();
+
+    if (rememberMe) {
+      localStorage.setItem('camelot_email', loginEmail);
+      localStorage.setItem('camelot_remember', 'true');
+    } else {
+      localStorage.removeItem('camelot_email');
+      localStorage.removeItem('camelot_remember');
+    }
 
     const { error } = await supabase.auth.signInWithPassword({
       email: loginEmail,
@@ -1161,6 +1178,10 @@ function App() {
         setPassword={setLoginPassword}
         loginUser={loginUser}
         resetPassword={resetPassword}
+        rememberMe={rememberMe}
+        setRememberMe={setRememberMe}
+        showPassword={showPassword}
+        setShowPassword={setShowPassword}
       />
     );
   }
@@ -1173,6 +1194,16 @@ function App() {
           <div>
             <strong>CAMELOT</strong>
             <span>Inventory Management</span>
+          </div>
+        </div>
+
+        <div className="user-card">
+          <div className="avatar">
+            {(displayName || user?.email || 'U').charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <strong>{displayName || user?.email}</strong>
+            <span>{role === 'admin' ? 'Administrator' : 'Viewer'}</span>
           </div>
         </div>
 
@@ -1336,6 +1367,8 @@ function App() {
               createSupabaseBackup={createSupabaseBackup}
               backupStatus={backupStatus}
               displayName={displayName}
+              profileName={profileName}
+              setProfileName={setProfileName}
               saveDisplayName={saveDisplayName}
               restoreLatestBackup={restoreLatestBackup}
             />
@@ -1802,7 +1835,7 @@ function MovementTable({ rows, showActions = false, onDeleteRestore }) {
   );
 }
 
-function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefaults, exportBackup, createSupabaseBackup, backupStatus, displayName, saveDisplayName, restoreLatestBackup }) {
+function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefaults, exportBackup, createSupabaseBackup, backupStatus, displayName, profileName, setProfileName, saveDisplayName, restoreLatestBackup }) {
   return (
     <div>
       <Panel title="User Profile">
@@ -1810,11 +1843,17 @@ function SettingsForm({ settings, updateSetting, saveSettings, resetSettingsDefa
           <label>
             User Name
             <input
-              value={displayName}
-              onChange={(e) => saveDisplayName(e.target.value)}
-              onBlur={(e) => saveDisplayName(e.target.value)}
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
               placeholder="Your display name"
             />
+          </label>
+
+          <label>
+            Save Profile
+            <button className="primary" type="button" onClick={() => saveDisplayName(profileName)}>
+              Save User Name
+            </button>
           </label>
         </div>
       </Panel>
@@ -1973,13 +2012,28 @@ function MovementForm({ form, setForm, products, active, settings }) {
 }
 
 
-function LoginScreen({ email, password, setEmail, setPassword, loginUser, resetPassword }) {
+function LoginScreen({
+  email,
+  password,
+  setEmail,
+  setPassword,
+  loginUser,
+  resetPassword,
+  rememberMe,
+  setRememberMe,
+  showPassword,
+  setShowPassword
+}) {
   return (
     <div className="app auth-app">
       <main className="auth-main">
-        <div className="auth-card">
+        <div className="auth-card auth-card-enterprise">
+          <div className="auth-topline">
+            <div className="auth-logo-large">C</div>
+            <span>Inventory OS</span>
+          </div>
+
           <div className="auth-brand">
-            <div className="logo">C</div>
             <div>
               <strong>CAMELOT</strong>
               <span>Inventory Management</span>
@@ -1989,7 +2043,7 @@ function LoginScreen({ email, password, setEmail, setPassword, loginUser, resetP
           <div className="auth-copy">
             <p>Secure warehouse control</p>
             <h1>Welcome back</h1>
-            <span>Sign in to manage inventory, reports, transfers and backups.</span>
+            <span>Manage inventory, transfers, daily use reports and Supabase backups from one premium dashboard.</span>
           </div>
 
           <form className="auth-form" onSubmit={loginUser}>
@@ -2007,32 +2061,52 @@ function LoginScreen({ email, password, setEmail, setPassword, loginUser, resetP
 
             <label>
               Password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                autoComplete="current-password"
-                required
-              />
+              <div className="password-wrap">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </label>
+
+            <div className="auth-row">
+              <label className="remember-row">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                Remember me
+              </label>
+
+              <button
+                className="auth-link"
+                type="button"
+                onClick={() => resetPassword(email)}
+              >
+                Forgot password?
+              </button>
+            </div>
 
             <button className="primary wide" type="submit">
               Sign In
             </button>
-
-            <button
-              className="auth-link"
-              type="button"
-              onClick={() => resetPassword(email)}
-            >
-              Forgot password?
-            </button>
           </form>
 
           <div className="auth-note">
-            <strong>Recovery available</strong>
-            <span>You can recover your password and restore backups from Settings.</span>
+            <strong>Recovery ready</strong>
+            <span>Password recovery, user profiles and backup restore are available for authorized users.</span>
           </div>
         </div>
       </main>
